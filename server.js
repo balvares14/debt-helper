@@ -32,8 +32,12 @@ app.use(express.json());
 // Request logging middleware
 app.use(logger.requestLogger);
 
-// Serve static files from the React app build directory
-app.use(express.static(path.join(__dirname, 'client/build')));
+// Local production and Elastic Beanstalk serve the built client from this
+// process. On Vercel the Vite service owns those pages, and express.static()
+// is ignored there.
+if (!process.env.VERCEL) {
+  app.use(express.static(path.join(__dirname, 'client/build')));
+}
 
 // API routes
 app.use('/api/health', healthRoutes);
@@ -52,10 +56,16 @@ app.use('/api/cash-events', cashEventRoutes);
 app.use(errorHandler);
 
 // Catch all handler: send back React's index.html file for any non-API routes
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
-});
+if (!process.env.VERCEL) {
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
+  });
+}
 
-app.listen(PORT, () => {
-  logger.info(`Server started on port ${PORT}`);
-});
+module.exports = app;
+
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    logger.info(`Server started on port ${PORT}`);
+  });
+}

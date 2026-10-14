@@ -9,6 +9,9 @@ export default defineConfig(({ mode }) => {
   const frontendPort = Number(env.FRONTEND_PORT || 3000);
   const backendPort = Number(env.BACKEND_PORT || env.PORT || 5001);
   const apiTarget = env.VITE_API_PROXY_TARGET ?? `http://localhost:${backendPort}`;
+  // vercel dev routes /api to the Express service itself. The localhost proxy
+  // is only for `npm run dev`, where Vite and Express are separate processes.
+  const proxyApi = !process.env.VERCEL;
 
   return {
     envDir,
@@ -20,10 +23,10 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: frontendPort,
-      open: true,
-      proxy: {
-        "/api": { target: apiTarget, changeOrigin: true },
-      },
+      open: proxyApi,
+      ...(proxyApi
+        ? { proxy: { "/api": { target: apiTarget, changeOrigin: true } } }
+        : {}),
     },
     preview: {
       port: frontendPort,
