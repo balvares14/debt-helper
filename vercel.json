@@ -4,11 +4,14 @@
     "app": {
       "root": ".",
       "framework": "express",
-      "entrypoint": "server.js"
+      "entrypoint": "server.js",
+      "buildCommand": "node -e \"process.exit(0)\""
     },
     "client": {
       "root": "client",
       "framework": "vite",
+      "installCommand": "npm install --include=dev",
+      "buildCommand": "vite build",
       "outputDirectory": "build",
       "rewrites": [
         { "source": "/(.*)", "destination": "/index.html" }
