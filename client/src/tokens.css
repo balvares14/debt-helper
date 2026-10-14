@@ -1,0 +1,59 @@
+/* Design tokens. tailwind.config.js maps every theme value onto these
+   variables, so replacing the palette here rebrands the whole app.
+
+   Keep the variable *names* when porting a page from another codebase: the
+   Tailwind classes it already uses (bg-surface-2, border-line, text-ink-muted,
+   rounded-card, shadow-elev-2, ...) resolve through this file. */
+:root {
+  /* surfaces */
+  --bg: #f8fafc;
+  --surface-1: #ffffff;
+  --surface-2: #f1f5f9;
+  --surface-3: #e2e8f0;
+
+  /* lines */
+  --line: #e2e8f0;
+  --line-soft: #f1f5f9;
+
+  /* ink */
+  --ink: #0f172a;
+  --ink-muted: #64748b;
+  --ink-faint: #94a3b8;
+
+  /* brand */
+  --brand: #4f46e5;
+  --accent: #6b7280;
+
+  /* semantic */
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --info: #0284c7;
+  --focus: #4f46e5;
+
+  /* Semantic fills and darker text pairs. These exist as their own tokens
+     because the Tailwind colours above resolve to var(--x), and an opacity
+     modifier like bg-danger/10 cannot be applied to a variable. The calendar
+     needs a readable red container for a negative day, so the tint and its
+     matching ink are declared outright. */
+  --success-soft: #dcfce7;
+  --success-strong: #15803d;
+  --warning-soft: #fef3c7;
+  --warning-strong: #b45309;
+  --danger-soft: #fee2e2;
+  --danger-strong: #b91c1c;
+  --info-soft: #e0f2fe;
+  --info-strong: #0369a1;
+  --brand-soft: #e0e7ff;
+
+  /* elevation */
+  --elev-1: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --elev-2: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --elev-3: 0 8px 24px rgba(15, 23, 42, 0.12);
+
+  /* radius */
+  --r-xs: 5px;
+  --r-card: 8px;
+  --r-lg: 12px;
+  --r-pill: 999px;
+}

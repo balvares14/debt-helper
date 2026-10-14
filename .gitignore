@@ -1,0 +1,28 @@
+# Secrets. .env holds live database credentials, AWS keys and an email app
+# password — it must never be committed.
+.env
+.env.*
+!.env.example
+
+node_modules/
+client/node_modules/
+
+# Vite output, served by server.js in production
+client/build/
+client/dist/
+
+logs/
+*.log
+npm-debug.log*
+
+.DS_Store
+Thumbs.db
+
+*.zip
+
+database-setup-template.sql
+database-setup.sql
+prompt.md
+
+
+docs

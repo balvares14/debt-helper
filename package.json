@@ -1,0 +1,50 @@
+{
+  "name": "react-node-app",
+  "version": "1.0.0",
+  "description": "Simple React app with Node.js backend for AWS Elastic Beanstalk deployment",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "nodemon server.js",
+    "client": "cd client && npm run dev",
+    "build": "cd client && npm run build",
+    "typecheck": "cd client && npm run typecheck",
+    "setup-db": "node scripts/setup-database.js",
+    "check-engine": "node scripts/check-engine.js",
+    "seed-demo": "node scripts/seed-demo.js",
+    "grant-permissions": "node scripts/grant-permissions.js",
+    "create-user": "node scripts/create-user.js",
+    "grant-insert": "node scripts/grant-insert.js",
+    "ready-4-eb": "npm run build && python3 zip_project.py",
+    "copy-project": "python3 copy-project.py"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.1692.0",
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^7.0.13",
+    "pg": "^8.11.3",
+    "winston": "^3.17.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  },
+  "keywords": [
+    "react",
+    "node",
+    "express",
+    "aws",
+    "elastic-beanstalk"
+  ],
+  "author": "",
+  "license": "MIT"
+}
