@@ -18,6 +18,7 @@ import {
   type ApiEnvelope,
   type RequestOptions,
 } from "@/lib/api";
+import { Spinner } from "@/components/common/Spinner";
 
 export interface AuthUser {
   id: number | string;
@@ -352,7 +353,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               />
               <div style={modalStyles.actions}>
                 <button type="submit" disabled={reauthLoading} style={modalStyles.primaryBtn}>
-                  {reauthLoading ? "Logging in…" : "Log In"}
+                  {reauthLoading ? <Spinner size={16} /> : "Log In"}
                 </button>
               </div>
             </form>
@@ -386,13 +387,18 @@ const modalStyles = {
   text: { margin: "0 0 12px", color: "var(--ink-muted)", fontSize: "0.8125rem" },
   actions: { display: "flex", gap: "6px", justifyContent: "flex-end" },
   primaryBtn: {
-    background: "var(--ink)",
-    color: "var(--surface-1)",
-    padding: "6px 10px",
+    background: "var(--brand)",
+    color: "#fff",
+    padding: "8px 16px",
+    minWidth: "4.5rem",
     border: "none",
-    borderRadius: "var(--r-xs)",
+    borderRadius: "var(--r-pill)",
     cursor: "pointer",
     fontSize: "0.75rem",
+    fontWeight: 600,
+    display: "inline-flex",
+    justifyContent: "center",
+    alignItems: "center",
   },
   form: { display: "grid", gap: "8px" },
   label: { fontSize: "0.75rem", color: "var(--ink-muted)" },

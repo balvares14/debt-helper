@@ -1,7 +1,12 @@
 {
-  "short_name": "Foundation",
-  "name": "Foundation Template",
+  "short_name": "Debt Planner",
+  "name": "Debt Planner",
   "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
     {
       "src": "/favicon.ico",
       "sizes": "64x64 32x32 24x24 16x16",
@@ -20,6 +25,6 @@
   ],
   "start_url": "/",
   "display": "standalone",
-  "theme_color": "#0f172a",
+  "theme_color": "#4f46e5",
   "background_color": "#f8fafc"
 }

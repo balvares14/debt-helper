@@ -6,16 +6,16 @@
 import { monthKeyOf, shortMonth, shortMonthYear } from "@/lib/format";
 
 export const PALETTE = [
-  "#4f46e5",
+  "#4fa855",
   "#dc2626",
   "#0284c7",
   "#d97706",
-  "#16a34a",
+  "#3d8644",
   "#7c3aed",
   "#db2777",
   "#0d9488",
   "#ea580c",
-  "#4338ca",
+  "#65a30d",
 ];
 
 export const WIDTH = 760;

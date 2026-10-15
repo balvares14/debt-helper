@@ -11,6 +11,7 @@ import DayDetail from "@/components/plan/DayDetail";
 import MonthCalendar from "@/components/plan/MonthCalendar";
 import { PlanBanners, PlanStatus } from "@/components/plan/PlanStatus";
 import EmptyPlan from "@/components/plan/EmptyPlan";
+import { PageSpinner } from "@/components/common/Spinner";
 import { usePlan } from "@/contexts/PlanContext";
 import { addMonthsISO, longDate, monthKeyOf, monthLabel, startOfMonthISO } from "@/lib/format";
 
@@ -33,7 +34,7 @@ export default function CalendarPage() {
   if (loading) {
     return (
       <div className="mx-auto max-w-6xl p-4">
-        <p className="text-xs text-ink-muted">Building your plan…</p>
+        <PageSpinner />
       </div>
     );
   }
@@ -54,7 +55,7 @@ export default function CalendarPage() {
   if (!hasPlan) return <EmptyPlan />;
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-3 p-4">
+    <div className="mx-auto flex max-w-6xl flex-col gap-3 p-3 sm:p-4">
       <PlanStatus />
       <PlanBanners banners={plan.projection.banners} />
 
@@ -63,7 +64,7 @@ export default function CalendarPage() {
           <NavButton onClick={() => onShiftMonth(-1)} label="Previous month">
             ‹
           </NavButton>
-          <h1 className="min-w-[10rem] text-center text-[0.9375rem] font-semibold text-ink">
+          <h1 className="min-w-[8.5rem] text-center text-sm font-semibold text-ink sm:min-w-[10rem] sm:text-[0.9375rem]">
             {monthLabel(visibleMonth)}
           </h1>
           <NavButton onClick={() => onShiftMonth(1)} label="Next month">
@@ -101,7 +102,8 @@ export default function CalendarPage() {
             className="inline-flex items-center justify-center gap-1.5 rounded-card border border-line bg-surface-1 px-3 py-2 text-xs font-medium text-ink hover:bg-surface-2"
           >
             <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
-            Add to {longDate(selectedDate)}
+            <span className="sm:hidden">Add to this day</span>
+            <span className="hidden sm:inline">Add to {longDate(selectedDate)}</span>
           </button>
           <DayDetail
             date={selectedDate}
@@ -110,7 +112,7 @@ export default function CalendarPage() {
             isToday={selectedDate === today}
           />
           <AddItemModal open={adding} date={selectedDate} onClose={() => setAdding(false)} />
-          <p className="px-1 text-[0.6875rem] leading-relaxed text-ink-faint">
+          <p className="hidden px-1 text-[0.6875rem] leading-relaxed text-ink-faint sm:block">
             Each day shows the cash you are left with after that day's money in, spending and
             payments. On today and earlier days, confirm, skip, or change an amount so the next
             extras use what actually happened.{" "}

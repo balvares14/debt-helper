@@ -87,7 +87,7 @@ export default function AddItemModal({ open, date, onClose }: AddItemModalProps)
 
   return (
     <div
-      className="fixed inset-0 z-[2000] flex items-start justify-center overflow-y-auto bg-[rgba(15,23,42,0.28)] p-3 sm:p-6"
+      className="fixed inset-0 z-[2000] flex items-stretch justify-center overflow-y-auto bg-[rgba(15,23,42,0.28)] p-0 sm:items-start sm:p-6"
       onClick={onClose}
       role="presentation"
     >
@@ -95,10 +95,10 @@ export default function AddItemModal({ open, date, onClose }: AddItemModalProps)
         role="dialog"
         aria-modal="true"
         aria-labelledby="add-item-title"
-        className="my-4 flex w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-line bg-surface-1 shadow-elev-3"
+        className="flex min-h-[100dvh] w-full max-w-3xl flex-col overflow-hidden bg-surface-1 shadow-elev-3 sm:min-h-0 sm:my-4 sm:rounded-lg sm:border sm:border-line"
         onClick={(event) => event.stopPropagation()}
       >
-        <header className="border-b border-line px-3 py-2.5">
+        <header className="shrink-0 border-b border-line px-3 py-2.5">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 id="add-item-title" className="text-[0.8125rem] font-semibold text-ink">
@@ -119,7 +119,7 @@ export default function AddItemModal({ open, date, onClose }: AddItemModalProps)
           </div>
         </header>
 
-        <div className="max-h-[min(36rem,calc(100vh-8rem))] overflow-y-auto p-3">
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-3 sm:max-h-[min(36rem,calc(100vh-8rem))]">
           {!choice ? (
             <div className="grid gap-2 sm:grid-cols-2">
               {CHOICES.map((entry) => (

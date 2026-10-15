@@ -21,7 +21,8 @@
   --ink-faint: #94a3b8;
 
   /* brand */
-  --brand: #4f46e5;
+  --brand: #4fa855;
+  --brand-strong: #3d8644;
   --accent: #6b7280;
 
   /* semantic */
@@ -29,7 +30,7 @@
   --warning: #d97706;
   --danger: #dc2626;
   --info: #0284c7;
-  --focus: #4f46e5;
+  --focus: #4fa855;
 
   /* Semantic fills and darker text pairs. These exist as their own tokens
      because the Tailwind colours above resolve to var(--x), and an opacity
@@ -44,7 +45,7 @@
   --danger-strong: #b91c1c;
   --info-soft: #e0f2fe;
   --info-strong: #0369a1;
-  --brand-soft: #e0e7ff;
+  --brand-soft: #e4f5e6;
 
   /* elevation */
   --elev-1: 0 1px 2px rgba(15, 23, 42, 0.06);

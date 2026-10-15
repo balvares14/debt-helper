@@ -250,6 +250,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         overlayClose={corner.overlayClose}
         showCloseButton={corner.showCloseButton}
         position={corner.position}
+        compact={corner.compact}
         icon={corner.icon}
         gifSrc={corner.gifSrc}
         zIndex={corner.zIndex}

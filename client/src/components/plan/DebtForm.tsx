@@ -7,9 +7,18 @@
  * issuer's number every month.
  */
 
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 
-import { Checkbox, Field, FormActions, NumberInput, Select, TextInput } from "./fields";
+import {
+  BadgeToggle,
+  Checkbox,
+  Field,
+  FormActions,
+  NumberInput,
+  Select,
+  StatusBadge,
+  TextInput,
+} from "./fields";
 import { ScheduleFields } from "./ScheduleFields";
 import { fieldError, usePlan } from "@/contexts/PlanContext";
 import { PROMO_LABELS } from "@/lib/format";
@@ -72,7 +81,7 @@ const emptyDraft = (today: string, debtType: DebtType = "credit_card"): Draft =>
   annualFeeMonth: "1",
   carryingBalance: true,
   notes: "",
-  status: "active",
+  status: "draft",
   promos: [],
 });
 
@@ -159,8 +168,12 @@ export default function DebtForm({
       promos: current.promos.filter((_, i) => i !== index),
     }));
 
+  const ready = useMemo(() => debtDraftReady(draft), [draft]);
+  const status = ready ? draft.status : "draft";
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!ready) return;
 
     const input: DebtInput = {
       name: draft.name,
@@ -180,7 +193,7 @@ export default function DebtForm({
       annualFeeMonth: draft.annualFee ? draft.annualFeeMonth : null,
       carryingBalance: draft.debtType === "loan" ? true : draft.carryingBalance,
       notes: draft.notes || null,
-      status: draft.status,
+      status,
       // Always sent, so clearing the last promo actually clears it.
       promos: draft.promos
         .filter((promo) => promo.endDate)
@@ -212,8 +225,8 @@ export default function DebtForm({
           : "flex flex-col gap-3 rounded-card border border-line bg-surface-2 p-3"
       }
     >
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="Name" error={err("name")} className="sm:col-span-2 lg:col-span-1">
+      <div className="flex flex-wrap items-end gap-2">
+        <Field label="Name" error={err("name")} className="min-w-0 flex-1 basis-[10rem]">
           <TextInput
             value={draft.name}
             onChange={(event) => set("name", event.target.value)}
@@ -223,46 +236,57 @@ export default function DebtForm({
           />
         </Field>
 
-        <Field label="Type" error={err("debtType")}>
-          <Select
+        <Field label="Type" error={err("debtType")} as="div">
+          <BadgeToggle
             value={draft.debtType}
-            onChange={(event) => setType(event.target.value as DebtType)}
-          >
-            <option value="credit_card">Credit card / line</option>
-            <option value="loan">Loan (fixed payment)</option>
-          </Select>
-        </Field>
-
-        <Field
-          label="Status"
-          hint="Draft stays saved but is left out of the plan."
-          error={err("status")}
-        >
-          <Select
-            value={draft.status}
-            onChange={(event) => set("status", event.target.value as ItemStatus)}
-          >
-            <option value="active">Active</option>
-            <option value="draft">Draft</option>
-          </Select>
-        </Field>
-
-        <Field label="Balance owed" error={err("balance")}>
-          <NumberInput
-            value={draft.balance}
-            onChange={(event) => set("balance", event.target.value)}
-            placeholder="0.00"
-            min="0"
-            step="0.01"
-            invalid={!!err("balance")}
+            onChange={setType}
+            options={[
+              { value: "credit_card", label: "Card" },
+              { value: "loan", label: "Loan" },
+            ]}
           />
         </Field>
 
-        <Field
-          label="APR %"
-          hint={isCard ? "The standard rate after any promo ends." : undefined}
-          error={err("apr")}
-        >
+        <Field label="Status" error={err("status")} as="div">
+          <StatusBadge
+            value={status}
+            onChange={(next) => set("status", next)}
+            disabled={!ready}
+            title={
+              ready
+                ? undefined
+                : "Fill the required fields before this can be Active. Stops is optional."
+            }
+          />
+        </Field>
+
+        <div className="flex items-end gap-2">
+          <Field label="Balance" error={err("balance")} className="w-28">
+            <NumberInput
+              value={draft.balance}
+              onChange={(event) => set("balance", event.target.value)}
+              placeholder="0.00"
+              min="0"
+              step="0.01"
+              invalid={!!err("balance")}
+            />
+          </Field>
+
+          {isCard && (
+            <Field label="Credit limit" error={err("creditLimit")} className="w-28">
+              <NumberInput
+                value={draft.creditLimit}
+                onChange={(event) => set("creditLimit", event.target.value)}
+                placeholder="8000"
+                min="0"
+                step="0.01"
+                invalid={!!err("creditLimit")}
+              />
+            </Field>
+          )}
+        </div>
+
+        <Field label="APR %" error={err("apr")} className="w-20">
           <NumberInput
             value={draft.apr}
             onChange={(event) => set("apr", event.target.value)}
@@ -273,12 +297,15 @@ export default function DebtForm({
             invalid={!!err("apr")}
           />
         </Field>
+      </div>
 
-        <ScheduleFields
-          draft={draft}
-          set={(key, value) => set(key, value as never)}
-          err={err}
-        />
+      <ScheduleFields
+        draft={draft}
+        set={(key, value) => set(key, value as never)}
+        err={err}
+      />
+
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
 
         <Field label="Required payment" error={err("paymentKind")}>
           <Select
@@ -321,23 +348,6 @@ export default function DebtForm({
               min="0"
               step="0.01"
               invalid={!!err("overrideMin")}
-            />
-          </Field>
-        )}
-
-        {isCard && (
-          <Field
-            label="Credit limit"
-            hint="Needed to know how much room is left."
-            error={err("creditLimit")}
-          >
-            <NumberInput
-              value={draft.creditLimit}
-              onChange={(event) => set("creditLimit", event.target.value)}
-              placeholder="8000"
-              min="0"
-              step="0.01"
-              invalid={!!err("creditLimit")}
             />
           </Field>
         )}
@@ -390,8 +400,8 @@ export default function DebtForm({
       )}
 
       {isCard && (
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <span className="text-[0.6875rem] font-medium text-ink-muted">
               Promotional rates
             </span>
@@ -415,7 +425,7 @@ export default function DebtForm({
           {draft.promos.map((promo, index) => (
             <div
               key={`${promo.kind}-${index}`}
-              className="grid gap-2 rounded-xs border border-line bg-surface-1 p-2 sm:grid-cols-4"
+              className="grid min-w-0 grid-cols-1 gap-2 overflow-hidden rounded-xs border border-line bg-surface-1 p-2 sm:grid-cols-2"
             >
               <Field label="Applies to" hint={promoHint(promo.kind)}>
                 <TextInput value={PROMO_LABELS[promo.kind]} disabled readOnly />
@@ -478,7 +488,7 @@ export default function DebtForm({
               </div>
 
               {promo.kind === "deferred_interest" && (
-                <p className="text-[0.625rem] leading-snug text-warning-strong sm:col-span-4">
+                <p className="text-[0.625rem] leading-snug text-warning-strong sm:col-span-2">
                   If this is not paid to $0 by the end date, every month of interest the promo
                   held back gets charged at once. The plan will prioritise clearing it.
                 </p>
@@ -502,11 +512,41 @@ export default function DebtForm({
 
       <FormActions
         saving={saving}
+        disabled={!ready}
         submitLabel={debt ? "Save changes" : "Add debt"}
         onCancel={onDone}
       />
+      {!ready && (
+        <p className="text-[0.625rem] text-ink-faint">
+          Name, balance, APR, start, and due are required. A loan also needs its payment. Stops is
+          optional. This stays Draft until then.
+        </p>
+      )}
     </form>
   );
+}
+
+function debtDraftReady(draft: Draft): boolean {
+  if (!draft.name.trim()) return false;
+  const balance = Number(draft.balance);
+  if (!Number.isFinite(balance) || balance < 0) return false;
+  const apr = Number(draft.apr);
+  if (!Number.isFinite(apr) || apr < 0 || apr > 100) return false;
+  if (!draft.startDate || !draft.dueDate) return false;
+  if (draft.paymentKind === "fixed") {
+    const payment = Number(draft.fixedPayment);
+    if (!Number.isFinite(payment) || payment <= 0) return false;
+  }
+  if (draft.paymentKind === "override_min") {
+    const minimum = Number(draft.overrideMin);
+    if (!Number.isFinite(minimum) || minimum < 0) return false;
+  }
+  if (draft.debtType === "credit_card" && draft.acceptsNewCharges) {
+    if (draft.creditLimit === "") return false;
+    const limit = Number(draft.creditLimit);
+    if (!Number.isFinite(limit) || limit < 0 || limit < balance) return false;
+  }
+  return true;
 }
 
 function promoHint(kind: PromoKind): string {

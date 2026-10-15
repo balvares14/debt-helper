@@ -81,3 +81,52 @@
     width: 0%;
   }
 }
+
+@keyframes bounce-in {
+  0% {
+    opacity: 0;
+    transform: translateY(1.15rem) scale(0.9);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(-0.38rem) scale(1.06);
+  }
+  75% {
+    transform: translateY(0.1rem) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-bounce-in {
+  animation: bounce-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes bounce-out {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(1.1rem) scale(0.88);
+  }
+}
+
+.animate-bounce-out {
+  animation: bounce-out 0.3s ease-in forwards;
+}
+
+.badge-number {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.badge-number::-webkit-outer-spin-button,
+.badge-number::-webkit-inner-spin-button {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+}

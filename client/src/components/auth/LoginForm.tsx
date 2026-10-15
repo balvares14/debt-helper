@@ -63,8 +63,8 @@ const LoginForm = ({ onSuccess, registrationAllowed = false, onSwitchToRegister 
 
           {error && <div style={styles.error}>{error}</div>}
 
-          <Button type="submit" disabled={loading} style={styles.submitButton}>
-            {loading ? "Logging in..." : "Login"}
+          <Button type="submit" loading={loading} style={styles.submitButton}>
+            Login
           </Button>
         </form>
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { afterPaint } from "./afterPaint";
 import { defaultToneIcon, NOTICE_TONES, type NoticeTone } from "./tones";
 import "./FloatingNotice.css";
@@ -31,6 +32,8 @@ export interface FloatingNoticeProps {
   overlayClose?: boolean;
   showCloseButton?: boolean;
   position?: FloatingNoticePosition;
+  /** Small glass pill — short confirmations like autosave. */
+  compact?: boolean;
   /** `'auto'` follows `tone`. `'none'` hides it. */
   icon?: "auto" | "none" | "error" | "success" | "info" | "warning" | "spinner" | ReactNode;
   gifSrc?: string | null;
@@ -68,6 +71,7 @@ export default function FloatingNotice({
   overlayClose = true,
   showCloseButton = true,
   position = "bottom-right",
+  compact = false,
   icon = "auto",
   gifSrc = null,
   zIndex = 1200,
@@ -138,6 +142,8 @@ export default function FloatingNotice({
   const handleNoticeClick = () => {
     if (dismissible) requestClose();
   };
+  const showClose = !compact && dismissible && showCloseButton;
+  const showTimer = !compact && duration > 0;
 
   const detailText =
     details == null || details === ""
@@ -146,7 +152,7 @@ export default function FloatingNotice({
         ? details
         : JSON.stringify(details, null, 2);
 
-  return (
+  return createPortal(
     <div
       className={`fn-root fn-root--${position}${blockInteraction ? " fn-root--blocking" : ""}`}
       style={vars}
@@ -163,9 +169,9 @@ export default function FloatingNotice({
       <div
         className={`fn-card${visible ? " fn-card--visible" : ""}${
           dismissible ? " fn-card--dismissible" : ""
-        }${tinted ? " fn-card--tinted" : ""}${colorIcon ? " fn-card--icon-accent" : ""}${
-          colorDetails ? " fn-card--details-accent" : ""
-        }`}
+        }${compact ? " fn-card--compact" : ""}${tinted ? " fn-card--tinted" : ""}${
+          colorIcon ? " fn-card--icon-accent" : ""
+        }${colorDetails ? " fn-card--details-accent" : ""}`}
         role="status"
         style={style}
         onClick={handleNoticeClick}
@@ -190,7 +196,7 @@ export default function FloatingNotice({
           {detailText ? <p className="fn-details">{detailText}</p> : null}
         </div>
 
-        {dismissible && showCloseButton ? (
+        {showClose ? (
           <button
             type="button"
             className="fn-close"
@@ -202,11 +208,11 @@ export default function FloatingNotice({
           >
             ×
           </button>
-        ) : (
+        ) : compact ? null : (
           <span />
         )}
 
-        {duration > 0 ? (
+        {showTimer ? (
           <div className="fn-timer" aria-hidden="true">
             <div
               className="fn-timer-bar"
@@ -216,6 +222,7 @@ export default function FloatingNotice({
           </div>
         ) : null}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

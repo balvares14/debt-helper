@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { LogOut } from "lucide-react";
+import { Banknote, LogOut } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -36,6 +36,7 @@ const Navigation = () => {
     <nav style={styles.nav}>
       <div style={styles.container}>
         <Link to="/" style={styles.logo}>
+          <Banknote size={16} strokeWidth={2} aria-hidden />
           Debt Planner
         </Link>
         <div style={styles.links}>
@@ -80,6 +81,9 @@ const styles = {
     height: "40px",
   },
   logo: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
     fontSize: "0.8125rem",
     fontWeight: 600,
     color: "var(--ink)",

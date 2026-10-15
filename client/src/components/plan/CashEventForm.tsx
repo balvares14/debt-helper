@@ -8,7 +8,16 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 
-import { Checkbox, Field, FormActions, NumberInput, Select, TextInput } from "./fields";
+import {
+  BadgeToggle,
+  Checkbox,
+  Field,
+  FormActions,
+  NumberInput,
+  Select,
+  StatusBadge,
+  TextInput,
+} from "./fields";
 import { fieldError, usePlan } from "@/contexts/PlanContext";
 import { ScheduleFields } from "./ScheduleFields";
 import {
@@ -49,7 +58,7 @@ const emptyDraft = (direction: Direction, today: string): Draft => ({
   paymentMethod: "cash",
   paymentDebtId: "",
   locked: false,
-  status: "active",
+  status: "draft",
 });
 
 const toDraft = (event: CashEvent): Draft => ({
@@ -103,8 +112,13 @@ export default function CashEventForm({
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
 
+  const localErrors = useMemo(() => cashEventErrors(draft), [draft]);
+  const ready = localErrors.length === 0;
+  const status = ready ? draft.status : "draft";
+
   const handleSubmit = async (submitEvent: FormEvent) => {
     submitEvent.preventDefault();
+    if (!ready) return;
 
     const isCharge = draft.direction === "charge";
     const input: CashEventInput = {
@@ -122,7 +136,7 @@ export default function CashEventForm({
           ? Number(draft.paymentDebtId)
           : null,
       locked: isCharge && draft.locked,
-      status: draft.status,
+      status,
     };
 
     const ok = await save((planWindow) =>
@@ -143,8 +157,8 @@ export default function CashEventForm({
           : "flex flex-col gap-3 rounded-card border border-line bg-surface-2 p-3"
       }
     >
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="Name" error={err("name")}>
+      <div className="flex flex-wrap items-end gap-2">
+        <Field label="Name" error={err("name")} className="min-w-0 flex-1 basis-[10rem]">
           <TextInput
             value={draft.name}
             onChange={(e) => set("name", e.target.value)}
@@ -154,7 +168,7 @@ export default function CashEventForm({
           />
         </Field>
 
-        <Field label="Amount" hint="Always positive." error={err("amount")}>
+        <Field label="Amount" error={err("amount")} className="w-24">
           <NumberInput
             value={draft.amount}
             onChange={(e) => set("amount", e.target.value)}
@@ -165,48 +179,45 @@ export default function CashEventForm({
           />
         </Field>
 
-        <Field label="Direction" error={err("direction")}>
-          <Select
+        <Field label="Direction" error={err("direction")} as="div">
+          <BadgeToggle
             value={draft.direction}
-            onChange={(e) => {
-              const next = e.target.value as Direction;
+            onChange={(next) =>
               setDraft((current) => ({
                 ...current,
                 direction: next,
-                // Routing is meaningless for income; reset it rather than
-                // carrying a stale card pin onto a paycheck.
                 canPutOnCard: next === "gain" ? false : current.canPutOnCard,
                 paymentMethod: next === "gain" ? "cash" : current.paymentMethod,
                 paymentDebtId: next === "gain" ? "" : current.paymentDebtId,
                 locked: next === "gain" ? false : current.locked,
-              }));
-            }}
-          >
-            <option value="charge">Charge (money out)</option>
-            <option value="gain">Gain (money in)</option>
-          </Select>
+              }))
+            }
+            options={[
+              { value: "gain", label: "Gain" },
+              { value: "charge", label: "Charge", tone: "danger" },
+            ]}
+          />
         </Field>
 
-        <Field
-          label="Status"
-          hint="Draft stays saved but is left out of the plan."
-          error={err("status")}
-        >
-          <Select
-            value={draft.status}
-            onChange={(e) => set("status", e.target.value as ItemStatus)}
-          >
-            <option value="active">Active</option>
-            <option value="draft">Draft</option>
-          </Select>
+        <Field label="Status" error={err("status")} as="div">
+          <StatusBadge
+            value={status}
+            onChange={(next) => set("status", next)}
+            disabled={!ready}
+            title={
+              ready
+                ? undefined
+                : "Fill name, amount, start, and due before this can be Active. Stops is optional."
+            }
+          />
         </Field>
-
-        <ScheduleFields
-          draft={draft}
-          set={(key, value) => set(key, value as never)}
-          err={err}
-        />
       </div>
+
+      <ScheduleFields
+        draft={draft}
+        set={(key, value) => set(key, value as never)}
+        err={err}
+      />
 
       {isCharge && (
         <div className="flex flex-col gap-2 rounded-xs border border-line bg-surface-1 p-2.5">
@@ -292,9 +303,30 @@ export default function CashEventForm({
 
       <FormActions
         saving={saving}
+        disabled={!ready}
         submitLabel={event ? "Save changes" : isCharge ? "Add charge" : "Add gain"}
         onCancel={onDone}
       />
+      {!ready && (
+        <p className="text-[0.625rem] text-ink-faint">
+          Name, amount, start, and due are required. Stops is optional. This stays Draft until then.
+        </p>
+      )}
     </form>
   );
+}
+
+function cashEventErrors(draft: Draft): Array<{ field: string; message: string }> {
+  const errors: Array<{ field: string; message: string }> = [];
+  if (!draft.name.trim()) errors.push({ field: "name", message: "Give this a name." });
+  const amount = Number(draft.amount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    errors.push({ field: "amount", message: "Amount must be more than $0." });
+  }
+  if (!draft.startDate) errors.push({ field: "startDate", message: "Needs a start date." });
+  if (!draft.dueDate) errors.push({ field: "dueDate", message: "Needs a due date." });
+  if (draft.direction === "charge" && draft.paymentMethod === "card" && !draft.paymentDebtId) {
+    errors.push({ field: "paymentDebtId", message: "Pick a card to pin this charge to." });
+  }
+  return errors;
 }

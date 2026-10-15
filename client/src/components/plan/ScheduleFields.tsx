@@ -4,9 +4,11 @@
  * example hit (the 12th, that Wednesday, January 1) that the cadence copies.
  */
 
+import { Repeat } from "lucide-react";
+
 import { CADENCE_LABELS } from "@/lib/format";
 import type { Cadence } from "@/lib/planApi";
-import { Field, Select, TextInput } from "./fields";
+import { BadgeSelect, Field, TextInput } from "./fields";
 
 export interface ScheduleDraft {
   startDate: string;
@@ -27,11 +29,16 @@ export function ScheduleFields({
   const oneTime = draft.cadence === "one_time";
 
   return (
-    <>
+    <div className="flex flex-wrap items-end gap-2">
       <Field
-        label="Start date"
-        hint="When this becomes active. Hits never land before this day."
+        label="Start"
         error={err("startDate")}
+        className="w-full min-w-0 sm:w-[9.75rem]"
+        as="div"
+        help={{
+          title: "Start date",
+          text: "When this is truly active. Nothing hits before this day. Start and due can be the same date.",
+        }}
       >
         <TextInput
           type="date"
@@ -41,24 +48,27 @@ export function ScheduleFields({
         />
       </Field>
 
-      <Field label="Repeats" error={err("cadence")}>
-        <Select value={draft.cadence} onChange={(event) => set("cadence", event.target.value)}>
-          {Object.entries(CADENCE_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </Select>
+      <Field label="Repeats" error={err("cadence")} as="div">
+        <BadgeSelect
+          value={draft.cadence}
+          onChange={(value) => set("cadence", value)}
+          invalid={!!err("cadence")}
+          icon={<Repeat className="h-3 w-3 text-ink-faint" strokeWidth={2} aria-hidden />}
+          options={Object.entries(CADENCE_LABELS).map(([value, label]) => ({ value, label }))}
+        />
       </Field>
 
       <Field
-        label="Due date"
-        hint={
-          oneTime
-            ? "The day this lands."
-            : "The first day it is charged or gained. Later copies are counted from this date."
-        }
+        label={oneTime ? "On" : "Due"}
         error={err("dueDate")}
+        className="w-full min-w-0 sm:w-[9.75rem]"
+        as="div"
+        help={{
+          title: oneTime ? "On this day" : "Due date",
+          text: oneTime
+            ? "The day this actually lands. Can be the same as start."
+            : "The first actual charge or gain date. Later copies go forward from here. Can be the same as start.",
+        }}
       >
         <TextInput
           type="date"
@@ -69,7 +79,7 @@ export function ScheduleFields({
       </Field>
 
       {!oneTime && (
-        <Field label="Stops after" hint="Optional." error={err("endDate")}>
+        <Field label="Stops" error={err("endDate")} className="w-full min-w-0 sm:w-[9.75rem]">
           <TextInput
             type="date"
             value={draft.endDate}
@@ -78,6 +88,6 @@ export function ScheduleFields({
           />
         </Field>
       )}
-    </>
+    </div>
   );
 }

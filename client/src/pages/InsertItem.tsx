@@ -244,26 +244,26 @@ const InsertItem = () => {
           </div>
 
           <div style={styles.buttonContainer}>
-            <Button type="submit" disabled={isLoading} style={styles.submitButton}>
-              {isLoading ? "Inserting..." : "1. Unprotected"}
+            <Button type="submit" loading={isLoading} style={styles.submitButton}>
+              1. Unprotected
             </Button>
 
             <Button
               type="button"
               onClick={handleProtectedSubmit}
-              disabled={isLoading}
+              loading={isLoading}
               style={styles.submitButton}
             >
-              {isLoading ? "Inserting..." : "2. Protected (auth)"}
+              2. Protected (auth)
             </Button>
 
             <Button
               type="button"
               onClick={handleAuthorizedSubmit}
-              disabled={isLoading}
+              loading={isLoading}
               style={styles.submitButton}
             >
-              {isLoading ? "Inserting..." : "3. Authorized (permission)"}
+              3. Authorized (permission)
             </Button>
           </div>
 

@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
+import { Spinner } from "@/components/common/Spinner";
 import { useAuth } from "@/contexts/AuthContext";
 
 /**
@@ -14,7 +15,7 @@ const ProtectedRoute = ({ children }: { children: ReactNode }) => {
   if (loading) {
     return (
       <div style={styles.loadingContainer}>
-        <div style={styles.loadingSpinner} />
+        <Spinner size={28} />
       </div>
     );
   }
@@ -47,14 +48,7 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     zIndex: 3000,
-  },
-  loadingSpinner: {
-    width: "18px",
-    height: "18px",
-    border: "2px solid var(--line)",
-    borderTop: "2px solid var(--ink)",
-    borderRadius: "50%",
-    animation: "spin 0.7s linear infinite",
+    color: "var(--brand)",
   },
 } satisfies Record<string, CSSProperties>;
 

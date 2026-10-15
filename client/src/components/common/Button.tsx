@@ -1,5 +1,7 @@
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from "react";
 
+import { Spinner } from "./Spinner";
+
 export type ButtonVariant = "primary" | "secondary" | "danger";
 export type ButtonSize = "small" | "medium" | "large";
 
@@ -7,19 +9,24 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
   variant?: ButtonVariant;
   size?: ButtonSize;
+  loading?: boolean;
 }
 
 const variants = {
-  primary: { background: "var(--ink)", color: "var(--surface-1)" },
+  primary: {
+    background: "var(--brand)",
+    color: "#fff",
+    boxShadow: "0 6px 16px rgba(79, 168, 85, 0.28)",
+  },
   secondary: {
-    background: "var(--surface-1)",
-    color: "var(--ink)",
-    border: "1px solid var(--line)",
+    background: "var(--brand-soft)",
+    color: "var(--brand)",
+    border: "none",
   },
   danger: {
-    background: "var(--surface-1)",
-    color: "var(--ink-muted)",
-    border: "1px solid var(--line)",
+    background: "var(--danger-soft)",
+    color: "var(--danger-strong)",
+    border: "none",
   },
 } satisfies Record<ButtonVariant, CSSProperties>;
 
@@ -32,28 +39,35 @@ const sizes = {
 const Button = ({
   children,
   disabled = false,
+  loading = false,
   variant = "primary",
   size = "medium",
   style = {},
   ...props
 }: ButtonProps) => (
   <button
-    disabled={disabled}
+    disabled={disabled || loading}
     style={{
       border: "none",
-      borderRadius: "var(--r-xs)",
+      borderRadius: "var(--r-pill)",
       cursor: disabled ? "not-allowed" : "pointer",
-      fontWeight: 500,
+      fontWeight: 600,
       letterSpacing: "0.01em",
       lineHeight: 1.3,
       ...variants[variant],
       ...sizes[size],
-      ...(disabled ? { opacity: 0.5 } : {}),
+      ...((disabled || loading) ? { opacity: 0.5 } : {}),
       ...style,
     }}
     {...props}
   >
-    {children}
+    {loading ? (
+      <span style={{ display: "inline-flex", justifyContent: "center" }}>
+        <Spinner size={size === "small" ? 14 : 16} />
+      </span>
+    ) : (
+      children
+    )}
   </button>
 );
 

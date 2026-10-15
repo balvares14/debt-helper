@@ -20,6 +20,7 @@ export default {
         "ink-muted": "var(--ink-muted)",
         "ink-faint": "var(--ink-faint)",
         brand: "var(--brand)",
+        "brand-strong": "var(--brand-strong)",
         accent: "var(--accent)",
         success: "var(--success)",
         warning: "var(--warning)",

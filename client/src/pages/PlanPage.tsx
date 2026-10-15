@@ -10,6 +10,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { clsx } from "clsx";
 
+import { PageSpinner } from "@/components/common/Spinner";
 import EmptyPlan from "@/components/plan/EmptyPlan";
 import FullPlanModal from "@/components/plan/FullPlanModal";
 import DebtBalanceChart from "@/components/plan/DebtBalanceChart";
@@ -27,7 +28,7 @@ export default function PlanPage() {
   if (loading) {
     return (
       <div className="mx-auto max-w-4xl p-4">
-        <p className="text-xs text-ink-muted">Loading…</p>
+        <PageSpinner />
       </div>
     );
   }

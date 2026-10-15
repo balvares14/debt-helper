@@ -84,9 +84,10 @@ export default function MonthCalendar({
         {WEEKDAY_INITIALS.map((name) => (
           <div
             key={name}
-            className="px-2 py-1.5 text-[0.6875rem] font-medium uppercase tracking-wide text-ink-faint"
+            className="px-0.5 py-1 text-center text-[0.625rem] font-medium uppercase tracking-wide text-ink-faint sm:px-2 sm:py-1.5 sm:text-[0.6875rem]"
           >
-            {name}
+            <span className="sm:hidden">{name === "Thu" ? "Th" : name === "Tue" ? "Tu" : name.slice(0, 1)}</span>
+            <span className="hidden sm:inline">{name}</span>
           </div>
         ))}
       </div>
@@ -148,7 +149,7 @@ function DayCell({
       aria-label={date}
       aria-current={isToday ? "date" : undefined}
       className={clsx(
-        "relative flex h-[5.75rem] flex-col items-stretch gap-0.5 border-b border-r border-line p-1.5 text-left align-top transition-colors",
+        "relative flex min-h-[4.5rem] flex-col items-stretch gap-0 border-b border-r border-line p-1 text-left align-top transition-colors sm:h-[5.75rem] sm:min-h-0 sm:gap-0.5 sm:p-1.5",
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-focus",
         negative
           ? "bg-danger-soft hover:bg-danger-soft"
@@ -159,12 +160,12 @@ function DayCell({
         isSelected && "ring-2 ring-inset ring-focus",
       )}
     >
-      <div className="flex items-baseline justify-between">
+      <div className="flex flex-col items-start sm:flex-row sm:items-baseline sm:justify-between sm:gap-0.5">
         <span
           className={clsx(
-            "text-[0.6875rem] font-medium",
+            "text-[0.625rem] font-medium leading-none sm:text-[0.6875rem]",
             isToday
-              ? "rounded-pill bg-ink px-1.5 py-0.5 text-surface-1"
+              ? "rounded-pill bg-ink px-1 py-px text-surface-1 sm:px-1.5 sm:py-0.5"
               : negative
                 ? "text-danger-strong"
                 : "text-ink-muted",
@@ -176,7 +177,7 @@ function DayCell({
         {day && (
           <span
             className={clsx(
-              "text-[0.8125rem] font-semibold tabular-nums",
+              "mt-0.5 text-[0.6875rem] font-semibold leading-none tabular-nums sm:mt-0 sm:text-[0.8125rem]",
               negative
                 ? "text-danger-strong"
                 : belowFloor
@@ -190,32 +191,41 @@ function DayCell({
       </div>
 
       {day && (
-        <div className="flex flex-col gap-px overflow-hidden text-[0.625rem] leading-tight">
-          {day.gains > 0 && (
-            <span className="truncate font-medium text-success-strong">
-              +{moneyCompact(day.gains)}
-            </span>
-          )}
-          {day.cashCharges > 0 && (
-            <span className="truncate text-ink-muted">−{moneyCompact(day.cashCharges)} cash</span>
-          )}
-          {day.cardSpend > 0 && (
-            <span className="truncate text-info-strong">
-              {moneyCompact(day.cardSpend)} on card
-            </span>
-          )}
-          {day.payments > 0 && (
-            <span
-              className={clsx(
-                "truncate",
-                hasExtra ? "font-medium text-brand" : "text-ink-muted",
-              )}
-            >
-              {hasExtra ? "▸ " : ""}
-              {moneyCompact(day.payments)} to debt
-            </span>
-          )}
-        </div>
+        <>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-0.5 text-[0.5625rem] leading-none sm:hidden">
+            {day.gains > 0 && (
+              <span className="font-medium text-success-strong">+{moneyCompact(day.gains)}</span>
+            )}
+            {hasExtra && <span className="font-medium text-brand">▸</span>}
+            {day.cardSpend > 0 && <span className="text-info-strong">▪</span>}
+          </div>
+          <div className="hidden flex-col gap-px overflow-hidden text-[0.625rem] leading-tight sm:flex">
+            {day.gains > 0 && (
+              <span className="truncate font-medium text-success-strong">
+                +{moneyCompact(day.gains)}
+              </span>
+            )}
+            {day.cashCharges > 0 && (
+              <span className="truncate text-ink-muted">−{moneyCompact(day.cashCharges)} cash</span>
+            )}
+            {day.cardSpend > 0 && (
+              <span className="truncate text-info-strong">
+                {moneyCompact(day.cardSpend)} on card
+              </span>
+            )}
+            {day.payments > 0 && (
+              <span
+                className={clsx(
+                  "truncate",
+                  hasExtra ? "font-medium text-brand" : "text-ink-muted",
+                )}
+              >
+                {hasExtra ? "▸ " : ""}
+                {moneyCompact(day.payments)} to debt
+              </span>
+            )}
+          </div>
+        </>
       )}
     </button>
   );

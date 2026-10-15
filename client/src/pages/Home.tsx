@@ -56,10 +56,9 @@ const features = [
 const Home = () => (
   <div style={styles.container}>
     <div style={styles.content}>
-      <h1 style={styles.title}>Foundation Template</h1>
+      <h1 style={styles.title}>Debt Planner</h1>
       <p style={styles.subtitle}>
-        A starter template for React + Node.js applications with database connectivity,
-        authentication, S3 file uploads, and email notifications built-in.
+        Map cash flow, schedule payments, and get debt-free sooner.
       </p>
 
       <div style={styles.featuresSection}>

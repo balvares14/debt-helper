@@ -111,8 +111,8 @@ const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) => {
 
           {error && <div style={styles.error}>{error}</div>}
 
-          <Button type="submit" disabled={loading} style={styles.submitButton}>
-            {loading ? "Creating Account..." : "Register"}
+          <Button type="submit" loading={loading} style={styles.submitButton}>
+            Register
           </Button>
         </form>
 

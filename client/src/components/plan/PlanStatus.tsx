@@ -113,7 +113,7 @@ export function PlanStatus() {
             Snowball
           </StrategyButton>
         </div>
-        <p className="text-[0.6875rem] text-ink-faint">{plan.projection.assumption}</p>
+        <p className="hidden text-[0.6875rem] text-ink-faint sm:block">{plan.projection.assumption}</p>
       </div>
     </div>
   );
@@ -131,11 +131,11 @@ function Stat({
   tone?: "neutral" | "good" | "warn" | "bad";
 }) {
   return (
-    <div className="bg-surface-1 px-3 py-2">
+    <div className="bg-surface-1 px-2 py-1.5 sm:px-3 sm:py-2">
       <p className="text-[0.625rem] font-medium uppercase tracking-wide text-ink-faint">{label}</p>
       <p
         className={clsx(
-          "mt-0.5 text-[0.9375rem] font-semibold tabular-nums",
+          "mt-0.5 text-[0.8125rem] font-semibold tabular-nums sm:text-[0.9375rem]",
           tone === "bad" && "text-danger-strong",
           tone === "warn" && "text-warning-strong",
           tone === "good" && "text-ink",

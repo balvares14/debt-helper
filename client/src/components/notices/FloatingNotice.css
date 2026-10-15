@@ -50,6 +50,40 @@
   opacity: 1;
 }
 
+.fn-card--compact {
+  width: max-content;
+  max-width: min(18rem, calc(100vw - 1.5rem));
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem;
+  align-items: center;
+  padding: 0.38rem 0.72rem;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--fn-bg) 58%, transparent);
+  border-color: color-mix(in srgb, var(--fn-border) 45%, transparent);
+  box-shadow: var(--elev-1);
+  backdrop-filter: blur(14px) saturate(1.15);
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+}
+
+.fn-card--compact .fn-copy {
+  padding-top: 0;
+}
+
+.fn-card--compact .fn-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.fn-card--compact .fn-media,
+.fn-card--compact .fn-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.fn-card--compact .fn-icon {
+  background: transparent;
+}
+
 .fn-root--bottom-right .fn-card {
   right: 0.75rem;
   bottom: 0.75rem;
@@ -238,10 +272,10 @@
 }
 
 @media (max-width: 480px) {
-  .fn-root--bottom-right .fn-card,
-  .fn-root--bottom-left .fn-card,
-  .fn-root--top-right .fn-card,
-  .fn-root--top-left .fn-card {
+  .fn-root--bottom-right .fn-card:not(.fn-card--compact),
+  .fn-root--bottom-left .fn-card:not(.fn-card--compact),
+  .fn-root--top-right .fn-card:not(.fn-card--compact),
+  .fn-root--top-left .fn-card:not(.fn-card--compact) {
     left: 0.75rem;
     right: 0.75rem;
     width: auto;
