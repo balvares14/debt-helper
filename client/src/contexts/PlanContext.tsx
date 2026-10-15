@@ -35,8 +35,9 @@ import {
   type ProjectedDay,
 } from "@/lib/planApi";
 
-/** One month behind today, so the calendar can page back without a refetch. */
-const DETAIL_BACK_MONTHS = 1;
+/** How far back the calendar can page without a refetch. History cash
+ *  comes from dated gains and charges, not only from today forward. */
+const DETAIL_BACK_MONTHS = 24;
 /** Matches the server's max horizon. First load asks for all of it so month
  *  changes and the plan charts reuse one calculation instead of asking again. */
 const DETAIL_FORWARD_MONTHS = 60;
@@ -119,11 +120,14 @@ export function PlanProvider({ children }: { children: ReactNode }) {
 
         if (envelope.success && envelope.data) {
           setPlan(envelope.data);
-          // Trust the days the server actually sent, not the window we asked for.
+          // Trust the days the server actually sent. The plan stops a month
+          // after payoff even if we asked for more.
+          const days = envelope.data.projection.days;
           loadedWindow.current = {
             today: target.today,
-            from: envelope.data.projection.window.from,
-            to: envelope.data.projection.window.to,
+            from: days[0]?.date ?? envelope.data.projection.window.from,
+            to: days[days.length - 1]?.date ?? envelope.data.projection.window.to,
+            continuePastPayoff: target.continuePastPayoff,
           };
           setError(null);
         } else {
@@ -155,7 +159,17 @@ export function PlanProvider({ children }: { children: ReactNode }) {
       const monthEnd = endOfMonthISO(month);
       if (loaded && month >= loaded.from && monthEnd <= loaded.to) return;
 
-      void load(windowFor(today), false);
+      const base = windowFor(today);
+      const pastLoaded = !!loaded && monthEnd > loaded.to;
+      void load(
+        {
+          ...base,
+          from: loaded && month < loaded.from ? month : base.from,
+          to: pastLoaded ? monthEnd : base.to,
+          continuePastPayoff: pastLoaded,
+        },
+        false,
+      );
     },
     [load, today],
   );
@@ -181,10 +195,12 @@ export function PlanProvider({ children }: { children: ReactNode }) {
         if (envelope.success && envelope.data) {
           // A write returns the recalculated plan, so this is the whole update.
           setPlan(envelope.data);
+          const days = envelope.data.projection.days;
           loadedWindow.current = {
             today: target.today,
-            from: envelope.data.projection.window.from,
-            to: envelope.data.projection.window.to,
+            from: days[0]?.date ?? envelope.data.projection.window.from,
+            to: days[days.length - 1]?.date ?? envelope.data.projection.window.to,
+            continuePastPayoff: target.continuePastPayoff,
           };
           requestId.current += 1; // any in-flight read is now stale
           if (!options.silent && envelope.message) toast(envelope.message);

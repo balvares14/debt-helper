@@ -1,12 +1,10 @@
 const jwt = require('jsonwebtoken');
 const logger = require('../utils/logger');
 
-// JWT secret key - must be set in environment variables
+// JWT secret key - must be set in environment variables.
+// Checked when a token is issued or verified, not at import, so a missing
+// value does not crash unrelated routes such as /api/health.
 const JWT_SECRET = process.env.JWT_SECRET;
-
-if (!JWT_SECRET) {
-  throw new Error('FATAL: JWT_SECRET environment variable is not set. Authentication will not work.');
-}
 
 /**
  * Authentication only: a valid JWT means we know who the caller is.
@@ -15,6 +13,14 @@ if (!JWT_SECRET) {
  * (see api/miscellaneous.js POST /authorized).
  */
 const authenticateToken = (req, res, next) => {
+  if (!JWT_SECRET) {
+    logger.error('JWT_SECRET environment variable is not set');
+    return res.status(500).json({
+      success: false,
+      message: 'Authentication is not configured.'
+    });
+  }
+
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
@@ -62,6 +68,10 @@ const authenticateToken = (req, res, next) => {
  * @returns {string} JWT token
  */
 const generateToken = (user) => {
+  if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET environment variable is not set.');
+  }
+
   const payload = {
     userId: user.id,
     email: user.email,

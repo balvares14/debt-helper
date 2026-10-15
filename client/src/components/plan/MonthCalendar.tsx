@@ -12,9 +12,9 @@ import { clsx } from "clsx";
 
 import {
   WEEKDAY_INITIALS,
+  addDaysISO,
   buildISO,
   daysInMonth,
-  endOfMonthISO,
   moneyCompact,
   monthKeyOf,
   parseISO,
@@ -51,8 +51,7 @@ function buildCells(month: string): Cell[] {
 
   // Trailing days of the previous month, for context.
   for (let offset = leading; offset > 0; offset -= 1) {
-    const previous = new Date(Date.UTC(year, monthNumber - 1, 1 - offset));
-    cells.push({ date: previous.toISOString().slice(0, 10), inMonth: false });
+    cells.push({ date: addDaysISO(start, -offset), inMonth: false });
   }
 
   for (let day = 1; day <= total; day += 1) {
@@ -61,8 +60,8 @@ function buildCells(month: string): Cell[] {
 
   // Leading days of the following month fill the rest of the six-week grid.
   while (cells.length < GRID_CELLS) {
-    const next = new Date(Date.UTC(year, monthNumber - 1, cells.length - leading + 1));
-    cells.push({ date: next.toISOString().slice(0, 10), inMonth: false });
+    const last = cells[cells.length - 1]?.date ?? start;
+    cells.push({ date: addDaysISO(last, 1), inMonth: false });
   }
 
   return cells;

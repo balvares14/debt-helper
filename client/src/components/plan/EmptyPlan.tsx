@@ -1,6 +1,6 @@
 /**
  * First run. Two ways forward: load the sample plan to see what the app does,
- * or enter the one number everything else is built on.
+ * or add a one-time Initial cash gain and start entering debts and bills.
  */
 
 import { Link } from "react-router-dom";
@@ -16,22 +16,24 @@ export default function EmptyPlan() {
       <div className="rounded-card border border-line bg-surface-1 p-5">
         <h1 className="text-base font-semibold text-ink">Let's build your payoff plan</h1>
         <p className="mt-1.5 max-w-prose text-xs leading-relaxed text-ink-muted">
-          It starts with one number: the cash you have right now. From there, add what you owe and
-          the money moving in and out, and you get a day-by-day calendar showing what you will
-          have in the bank — plus which card or cash to use for each purchase so you pay the least
-          interest.
+          It starts with the money already in the bank — add a one-time gain named Initial cash,
+          dated whenever that money landed. From there, add what you owe and the money moving in
+          and out, and you get a day-by-day calendar showing what you will have in the bank —
+          plus which card or cash to use for each purchase so you pay the least interest.
         </p>
 
         <ol className="mt-4 flex flex-col gap-2">
-          <Step number={1} title="Enter your cash on hand">
-            One opening deposit, so the plan knows what it is working with.
+          <Step number={1} title="Add Initial cash, then paychecks">
+            A one-time gain for money already in the bank, dated on the day it was there. Later
+            paychecks keep the calendar going — yesterday still counts today.
           </Step>
           <Step number={2} title="Add your debts">
-            Balances, rates and due dates. Promotional 0% offers are supported, including when
-            they only cover part of a balance.
+            Balances, rates, start dates and due days. Promotional 0% offers are supported,
+            including when they only cover part of a balance.
           </Step>
-          <Step number={3} title="Add income and bills">
-            Paychecks, rent, groceries. Mark the ones a card could absorb.
+          <Step number={3} title="Add bills and spending">
+            Rent, groceries, anything else that leaves the account. Mark the ones a card could
+            absorb.
           </Step>
         </ol>
 

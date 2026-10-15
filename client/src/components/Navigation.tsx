@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import { LogOut } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -40,12 +41,11 @@ const Navigation = () => {
         <div style={styles.links}>
           {isAuthenticated ? (
             <>
-              <NavItem to="/">Calendar</NavItem>
-              <NavItem to="/plan">Plan</NavItem>
               <NavItem to="/setup">Setup</NavItem>
-              <NavItem to="/profile">Profile</NavItem>
-              <button onClick={logout} style={styles.logoutButton}>
-                Logout
+              <NavItem to="/plan">My Plan</NavItem>
+              <NavItem to="/">Calendar</NavItem>
+              <button onClick={logout} style={styles.logoutButton} title="Log out" aria-label="Log out">
+                <LogOut size={15} strokeWidth={1.75} />
               </button>
             </>
           ) : (
@@ -98,14 +98,15 @@ const styles = {
   activeLink: { color: "var(--ink)", background: "var(--surface-2)" },
   emphasisLink: { color: "var(--ink)" },
   logoutButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
     background: "none",
     border: "none",
-    color: "var(--ink-muted)",
-    padding: "4px 8px",
+    color: "var(--danger)",
+    padding: "4px 6px",
     borderRadius: "var(--r-xs)",
     cursor: "pointer",
-    fontWeight: 450,
-    fontSize: "0.75rem",
   },
 } satisfies Record<string, CSSProperties>;
 

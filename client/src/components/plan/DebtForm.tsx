@@ -10,11 +10,13 @@
 import { useState, type FormEvent } from "react";
 
 import { Checkbox, Field, FormActions, NumberInput, Select, TextInput } from "./fields";
+import { ScheduleFields } from "./ScheduleFields";
 import { fieldError, usePlan } from "@/contexts/PlanContext";
 import { PROMO_LABELS } from "@/lib/format";
 import {
   createDebt,
   updateDebt,
+  type Cadence,
   type Debt,
   type DebtInput,
   type DebtType,
@@ -35,7 +37,10 @@ interface Draft {
   debtType: DebtType;
   balance: string;
   apr: string;
-  dueDay: string;
+  startDate: string;
+  cadence: Cadence;
+  dueDate: string;
+  endDate: string;
   paymentKind: PaymentKind;
   fixedPayment: string;
   overrideMin: string;
@@ -49,16 +54,19 @@ interface Draft {
   promos: PromoDraft[];
 }
 
-const emptyDraft = (): Draft => ({
+const emptyDraft = (today: string, debtType: DebtType = "credit_card"): Draft => ({
   name: "",
-  debtType: "credit_card",
+  debtType,
   balance: "",
   apr: "",
-  dueDay: "1",
-  paymentKind: "estimated_min",
+  startDate: today,
+  cadence: "monthly",
+  dueDate: today,
+  endDate: "",
+  paymentKind: debtType === "loan" ? "fixed" : "estimated_min",
   fixedPayment: "",
   overrideMin: "",
-  acceptsNewCharges: true,
+  acceptsNewCharges: debtType === "credit_card",
   creditLimit: "",
   annualFee: "",
   annualFeeMonth: "1",
@@ -73,7 +81,10 @@ const toDraft = (debt: Debt): Draft => ({
   debtType: debt.debtType,
   balance: String(debt.balance),
   apr: String(debt.apr),
-  dueDay: String(debt.dueDay),
+  startDate: debt.startDate ?? "",
+  cadence: debt.cadence ?? "monthly",
+  dueDate: debt.dueDate ?? debt.startDate ?? "",
+  endDate: debt.endDate ?? "",
   paymentKind: debt.paymentKind,
   fixedPayment: debt.fixedPayment === null ? "" : String(debt.fixedPayment),
   overrideMin: debt.overrideMin === null ? "" : String(debt.overrideMin),
@@ -95,11 +106,24 @@ const toDraft = (debt: Debt): Draft => ({
 export interface DebtFormProps {
   debt?: Debt;
   onDone: () => void;
+  /** Seed a new debt on this day (ignored when editing). */
+  initialDate?: string;
+  initialDebtType?: DebtType;
+  /** Drop the card chrome when the form already sits in a panel. */
+  plain?: boolean;
 }
 
-export default function DebtForm({ debt, onDone }: DebtFormProps) {
-  const { save, saving, fieldErrors, error } = usePlan();
-  const [draft, setDraft] = useState<Draft>(() => (debt ? toDraft(debt) : emptyDraft()));
+export default function DebtForm({
+  debt,
+  onDone,
+  initialDate,
+  initialDebtType = "credit_card",
+  plain = false,
+}: DebtFormProps) {
+  const { save, saving, fieldErrors, error, today } = usePlan();
+  const [draft, setDraft] = useState<Draft>(() =>
+    debt ? toDraft(debt) : emptyDraft(initialDate || today, initialDebtType),
+  );
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
@@ -143,7 +167,10 @@ export default function DebtForm({ debt, onDone }: DebtFormProps) {
       debtType: draft.debtType,
       balance: draft.balance || 0,
       apr: draft.apr || 0,
-      dueDay: draft.dueDay || 1,
+      startDate: draft.startDate,
+      cadence: draft.cadence,
+      dueDate: draft.dueDate,
+      endDate: draft.cadence === "one_time" || !draft.endDate ? null : draft.endDate,
       paymentKind: draft.paymentKind,
       fixedPayment: draft.paymentKind === "fixed" ? draft.fixedPayment : null,
       overrideMin: draft.paymentKind === "override_min" ? draft.overrideMin : null,
@@ -179,7 +206,11 @@ export default function DebtForm({ debt, onDone }: DebtFormProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-3 rounded-card border border-line bg-surface-2 p-3"
+      className={
+        plain
+          ? "flex flex-col gap-3"
+          : "flex flex-col gap-3 rounded-card border border-line bg-surface-2 p-3"
+      }
     >
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Name" error={err("name")} className="sm:col-span-2 lg:col-span-1">
@@ -243,16 +274,11 @@ export default function DebtForm({ debt, onDone }: DebtFormProps) {
           />
         </Field>
 
-        <Field label="Due day" hint="Day of the month, 1-28." error={err("dueDay")}>
-          <NumberInput
-            value={draft.dueDay}
-            onChange={(event) => set("dueDay", event.target.value)}
-            min="1"
-            max="28"
-            step="1"
-            invalid={!!err("dueDay")}
-          />
-        </Field>
+        <ScheduleFields
+          draft={draft}
+          set={(key, value) => set(key, value as never)}
+          err={err}
+        />
 
         <Field label="Required payment" error={err("paymentKind")}>
           <Select

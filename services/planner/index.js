@@ -20,9 +20,11 @@ const dates = require('./dates');
  *                                  their calendar day rather than the server's
  * @param {string} [options.from]   first day of full daily detail
  * @param {string} [options.to]     last day of full daily detail
+ * @param {boolean} [options.continuePastPayoff]  keep daily detail after the
+ *                                                automatic payoff + 1 month
  */
 async function buildPlan(userId, options = {}) {
-  const { settings, debts, events } = await repository.loadPlan(userId);
+  const { settings, debts, events, actuals } = await repository.loadPlan(userId);
 
   const today = dates.isValidISODate(options.today) ? options.today : dates.todayISO();
   const from = dates.isValidISODate(options.from) ? options.from : null;
@@ -34,7 +36,7 @@ async function buildPlan(userId, options = {}) {
   const liveDebts = debts.filter((debt) => debt.status !== 'draft');
   const liveDebtIds = new Set(liveDebts.map((debt) => debt.id));
   const liveEvents = events
-    .filter((event) => event.isInitialDeposit || event.status !== 'draft')
+    .filter((event) => event.status !== 'draft')
     .map((event) => {
       if (event.paymentDebtId && !liveDebtIds.has(event.paymentDebtId)) {
         return { ...event, paymentMethod: 'cash', paymentDebtId: null, locked: false };
@@ -46,15 +48,15 @@ async function buildPlan(userId, options = {}) {
     today,
     cashFloor: settings.cashFloor,
     strategy: settings.strategy,
-    horizonMonths: settings.horizonMonths,
+    horizonMonths: 60,
     debts: liveDebts,
     events: liveEvents,
+    actuals: actuals || [],
+    continuePastPayoff: !!options.continuePastPayoff,
     windowFrom: from,
     // An inverted range would collect nothing; fall back to the default window.
     windowTo: to && from && to < from ? null : to
   });
-
-  const initialDeposit = events.find((event) => event.isInitialDeposit) || null;
 
   return {
     settings: {
@@ -62,9 +64,9 @@ async function buildPlan(userId, options = {}) {
       strategy: settings.strategy,
       horizonMonths: settings.horizonMonths
     },
-    initialDeposit,
+    initialDeposit: null,
     debts,
-    events: events.filter((event) => !event.isInitialDeposit),
+    events,
     projection
   };
 }

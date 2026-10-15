@@ -1,8 +1,8 @@
 /**
  * Gains and charges — the money moving in and out that the calendar is built from.
  *
- * The starting cash balance is not here: it lives at PUT /api/plan/cash
- * because it is upserted rather than listed.
+ * Cash on hand is the running ledger of these rows, including dates before
+ * today. A first-time balance is just a one-time gain (for example "Initial cash").
  */
 
 const express = require('express');
@@ -25,8 +25,8 @@ router.get(
 
 /**
  * POST /api/cash-events
- * { name, amount, direction, startDate, cadence, endDate?, canPutOnCard?,
- *   paymentMethod?, paymentDebtId?, locked? }
+ * { name, amount, direction, startDate, cadence, dueDate, endDate?,
+ *   canPutOnCard?, paymentMethod?, paymentDebtId?, locked? }
  */
 router.post(
   '/',
@@ -52,10 +52,6 @@ router.put(
     const existing = await repository.getEvent(req.user.userId, eventId);
     if (!existing) return fail(res, 404, 'Entry not found.');
 
-    if (existing.isInitialDeposit) {
-      return fail(res, 400, 'Edit your starting cash from the cash field instead.');
-    }
-
     const debts = await repository.listDebts(req.user.userId);
     const parsed = validation.validateEvent(req.body, debts);
     if (!parsed.ok) return fail(res, 400, 'Check these fields.', parsed.errors);
@@ -72,7 +68,6 @@ router.put(
  * { status: 'active' | 'draft' }
  *
  * Draft means the entry stays saved but is ignored by the projection.
- * Starting cash cannot be drafted — it always counts.
  */
 router.patch(
   '/:id/status',
@@ -82,10 +77,6 @@ router.patch(
 
     const existing = await repository.getEvent(req.user.userId, eventId);
     if (!existing) return fail(res, 404, 'Entry not found.');
-
-    if (existing.isInitialDeposit) {
-      return fail(res, 400, 'Starting cash always counts in the plan.');
-    }
 
     const status = validation.asStatus(req.body.status, null);
     if (!status) {

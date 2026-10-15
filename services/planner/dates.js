@@ -97,80 +97,108 @@ function todayISO(timeZone) {
 
 const CADENCE_STEP_DAYS = { weekly: 7, biweekly: 14 };
 
+/** 0 = Sunday, matching Date#getUTCDay. */
+function weekdayOf(iso) {
+  return new Date(toDayIndex(iso) * MS_PER_DAY).getUTCDay();
+}
+
+/** First day-of-month `occurDay` on or after `iso`. */
+function firstOccurDayOnOrAfter(iso, occurDay) {
+  const dueThisMonth = dueDateInMonth(iso, occurDay);
+  if (dueThisMonth >= iso) return dueThisMonth;
+  return dueDateInMonth(addMonths(iso, 1), occurDay);
+}
+
 /**
- * Every date this event lands on within [fromISO, toISO], inclusive.
+ * Shared schedule for debts and cash events:
+ *   startDate — when the item becomes active
+ *   dueDate   — the first day it is charged or gained
+ *   cadence   — how later copies are counted from that due date
+ *   endDate   — optional last day it can land
  *
- * Occurrences are anchored to `startDate` and never generated before it, so
- * moving the window does not shift the pattern.
+ * Recurrences only go forward from dueDate, and never before startDate.
  */
-function occurrencesBetween(event, fromISO, toISODate) {
-  const { startDate, cadence, endDate } = event;
+function scheduleOf(item, fallbackDate) {
+  const startDate = item.startDate || fallbackDate;
+  const cadence = item.cadence || (item.dueDay ? 'monthly' : 'one_time');
+  let dueDate = item.dueDate;
+  if (!dueDate && item.dueDay && startDate) {
+    dueDate = firstOccurDayOnOrAfter(startDate, item.dueDay);
+  }
+  if (!dueDate) dueDate = startDate;
+  return { startDate, dueDate, cadence, endDate: item.endDate || null };
+}
+
+/**
+ * Every date this item lands on within [fromISO, toISO], inclusive.
+ */
+function occurrencesBetween(item, fromISO, toISODate) {
+  const { startDate, dueDate, cadence, endDate } = scheduleOf(item, fromISO);
   const windowStart = toDayIndex(fromISO);
   const windowEnd = toDayIndex(toISODate);
-  const anchor = toDayIndex(startDate);
+  const activeFrom = toDayIndex(startDate);
   const stop = endDate ? Math.min(windowEnd, toDayIndex(endDate)) : windowEnd;
+  const floor = Math.max(windowStart, activeFrom);
 
-  if (stop < windowStart || stop < anchor) return [];
+  if (stop < windowStart || stop < activeFrom) return [];
 
   if (cadence === 'one_time') {
-    return anchor >= windowStart && anchor <= stop ? [toISO(anchor)] : [];
+    const hit = toDayIndex(dueDate);
+    return hit >= floor && hit <= stop ? [dueDate] : [];
   }
 
   const stepDays = CADENCE_STEP_DAYS[cadence];
   if (stepDays) {
-    // Jump straight to the first occurrence inside the window.
-    const skipped = Math.max(0, Math.ceil((windowStart - anchor) / stepDays));
+    const anchor = toDayIndex(dueDate);
+    let day = anchor;
+    if (day < floor) {
+      day = anchor + Math.ceil((floor - anchor) / stepDays) * stepDays;
+    }
     const dates = [];
-    for (let day = anchor + skipped * stepDays; day <= stop; day += stepDays) {
+    for (; day <= stop; day += stepDays) {
       dates.push(toISO(day));
     }
     return dates;
   }
 
   if (cadence === 'monthly' || cadence === 'semimonthly' || cadence === 'yearly') {
-    return monthlyFamilyOccurrences(event, anchor, windowStart, stop);
+    return monthlyFamilyOccurrences({ dueDate, cadence }, floor, stop);
   }
 
   return [];
 }
 
-/** monthly / semimonthly / yearly all walk month-by-month from the anchor. */
-function monthlyFamilyOccurrences(event, anchor, windowStart, stop) {
-  const { cadence, startDate } = event;
-  const monthStep = cadence === 'yearly' ? 12 : 1;
-  const { day: anchorDay } = partsOf(startDate);
-
-  // Start a step early so a semimonthly second-half date near the window edge
-  // is not missed, then filter.
-  const anchorParts = partsOf(startDate);
-  const windowStartParts = partsOf(toISO(windowStart));
-  const monthsApart =
-    (windowStartParts.year - anchorParts.year) * 12 + (windowStartParts.month - anchorParts.month);
-  const startStep = Math.max(0, Math.floor(monthsApart / monthStep) - 1);
-
+function monthlyFamilyOccurrences(schedule, floor, stop) {
+  const { dueDate, cadence } = schedule;
+  const { day: dueDay } = partsOf(dueDate);
+  const first = Math.max(floor, toDayIndex(dueDate));
   const dates = [];
-  for (let step = startStep; ; step += 1) {
-    const base = addMonths(startDate, step * monthStep);
-    const baseIndex = toDayIndex(base);
 
-    const candidates = [baseIndex];
-    if (cadence === 'semimonthly') {
-      // Twice a month: the anchor day and ~15 days later, clamped.
-      const { year, month } = partsOf(base);
-      const secondDay = Math.min(anchorDay + 15, daysInMonth(year, month));
-      candidates.push(toDayIndex(buildISO(year, month, secondDay)));
+  if (cadence === 'yearly') {
+    let cursor = dueDate;
+    while (toDayIndex(cursor) < first) cursor = addMonths(cursor, 12);
+    while (toDayIndex(cursor) <= stop) {
+      dates.push(cursor);
+      cursor = addMonths(cursor, 12);
     }
-
-    for (const candidate of candidates) {
-      if (candidate >= Math.max(windowStart, anchor) && candidate <= stop) {
-        dates.push(toISO(candidate));
-      }
-    }
-
-    if (baseIndex > stop) break;
+    return dates;
   }
 
-  return dates.sort();
+  let monthCursor = startOfMonth(dueDate);
+  while (toDayIndex(monthCursor) <= stop) {
+    const { year, month } = partsOf(monthCursor);
+    const hits = [dueDateInMonth(monthCursor, dueDay)];
+    if (cadence === 'semimonthly') {
+      hits.push(buildISO(year, month, Math.min(dueDay + 15, daysInMonth(year, month))));
+    }
+    for (const hit of hits) {
+      const index = toDayIndex(hit);
+      if (index >= first && index <= stop) dates.push(hit);
+    }
+    monthCursor = addMonths(monthCursor, 1);
+  }
+
+  return [...new Set(dates)].sort();
 }
 
 /** The debt's due date inside the month containing `iso`. */
@@ -194,6 +222,9 @@ module.exports = {
   startOfMonth,
   endOfMonth,
   todayISO,
+  weekdayOf,
+  firstOccurDayOnOrAfter,
+  scheduleOf,
   occurrencesBetween,
   dueDateInMonth
 };

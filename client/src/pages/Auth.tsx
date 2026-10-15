@@ -37,7 +37,7 @@ const Auth = () => {
     if (from?.pathname) {
       navigate(`${from.pathname}${from.search ?? ""}${from.hash ?? ""}`, { replace: true });
     } else {
-      navigate("/profile");
+      navigate("/");
     }
   };
 

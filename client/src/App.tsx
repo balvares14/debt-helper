@@ -9,7 +9,6 @@ import CalendarPage from "@/pages/CalendarPage";
 import SetupPage from "@/pages/SetupPage";
 import PlanPage from "@/pages/PlanPage";
 import Auth from "@/pages/Auth";
-import Profile from "@/pages/Profile";
 import "./App.css";
 
 /**
@@ -40,14 +39,7 @@ function App() {
               <main style={{ paddingTop: "40px" }}>
                 <Routes>
                   <Route path="/auth" element={<Auth />} />
-                  <Route
-                    path="/profile"
-                    element={
-                      <ProtectedRoute>
-                        <Profile />
-                      </ProtectedRoute>
-                    }
-                  />
+                  <Route path="/profile" element={<Navigate to="/" replace />} />
 
                   <Route element={<PlannerLayout />}>
                     <Route path="/" element={<CalendarPage />} />

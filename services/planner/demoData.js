@@ -6,8 +6,8 @@
  *   - Card C has a real 0% purchase window, so groceries should
  *   - rent is due before the next paycheck, so the optimizer must not drain
  *     cash into Card B and leave it short
- *   - the floor ($1,000) starts above the cash on hand ($800), which should
- *     show a floor warning rather than block anything
+ *   - yesterday's "Initial cash" ($800) still funds today, even with no
+ *     gain dated today
  */
 
 const dates = require('./dates');
@@ -18,7 +18,7 @@ function buildDemoPlan(today) {
   return {
     settings: { cashFloor: 1000, strategy: 'optimized', horizonMonths: 60 },
 
-    initialCash: { amount: 800, date: iso, name: 'Starting cash' },
+    initialCash: { amount: 800, date: dates.addDays(iso, -1), name: 'Initial cash' },
 
     debts: [
       {
@@ -26,13 +26,16 @@ function buildDemoPlan(today) {
         debtType: 'credit_card',
         balance: 6400,
         apr: 29.99,
-        dueDay: 12,
+        startDate: dates.addMonths(iso, -18),
+        cadence: 'monthly',
+        dueDate: dates.firstOccurDayOnOrAfter(dates.addMonths(iso, -18), 12),
         paymentKind: 'estimated_min',
         acceptsNewCharges: true,
         creditLimit: 8000,
         carryingBalance: true,
         annualFee: 0,
         notes: 'Highest rate. Attack this one; do not spend on it.',
+        balanceAsOf: iso,
         promos: []
       },
       {
@@ -40,13 +43,16 @@ function buildDemoPlan(today) {
         debtType: 'credit_card',
         balance: 1200,
         apr: 18.99,
-        dueDay: 20,
+        startDate: dates.addMonths(iso, -8),
+        cadence: 'monthly',
+        dueDate: dates.firstOccurDayOnOrAfter(dates.addMonths(iso, -8), 20),
         paymentKind: 'estimated_min',
         acceptsNewCharges: true,
         creditLimit: 4000,
         carryingBalance: true,
         annualFee: 0,
         notes: 'Existing balance at 0% for 4 more months; new purchases 0% for 6.',
+        balanceAsOf: iso,
         promos: [
           {
             kind: 'existing_balance',
@@ -67,7 +73,9 @@ function buildDemoPlan(today) {
         debtType: 'loan',
         balance: 11200,
         apr: 7.4,
-        dueDay: 3,
+        startDate: dates.addMonths(iso, -24),
+        cadence: 'monthly',
+        dueDate: dates.firstOccurDayOnOrAfter(dates.addMonths(iso, -24), 3),
         paymentKind: 'fixed',
         fixedPayment: 310,
         acceptsNewCharges: false,
@@ -75,6 +83,7 @@ function buildDemoPlan(today) {
         carryingBalance: true,
         annualFee: 0,
         notes: 'Installment loan. Cannot take charges.',
+        balanceAsOf: iso,
         promos: []
       }
     ],
@@ -86,6 +95,7 @@ function buildDemoPlan(today) {
         direction: 'gain',
         startDate: iso,
         cadence: 'biweekly',
+        dueDate: iso,
         canPutOnCard: false,
         paymentMethod: 'cash'
       },
@@ -93,13 +103,11 @@ function buildDemoPlan(today) {
         name: 'Rent',
         amount: 1650,
         direction: 'charge',
-        // Due on the 1st of next month, which lands before the second paycheck.
-        startDate: dates.buildISO(
-          dates.partsOf(dates.addMonths(iso, 1)).year,
-          dates.partsOf(dates.addMonths(iso, 1)).month,
-          1
-        ),
+        // Active from today; hits on the 1st, so the next copy is the 1st
+        // of next month when today is mid-month — before the second paycheck.
+        startDate: iso,
         cadence: 'monthly',
+        dueDate: dates.firstOccurDayOnOrAfter(iso, 1),
         canPutOnCard: false,
         paymentMethod: 'cash'
       },
@@ -109,6 +117,7 @@ function buildDemoPlan(today) {
         direction: 'charge',
         startDate: dates.addDays(iso, 2),
         cadence: 'weekly',
+        dueDate: dates.addDays(iso, 2),
         canPutOnCard: true,
         paymentMethod: 'optimizer'
       }

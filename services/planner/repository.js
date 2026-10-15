@@ -17,14 +17,14 @@ function numeric(value) {
 }
 
 const DEBT_COLUMNS = `
-  id, user_id, name, debt_type, balance, apr, due_day, payment_kind,
-  fixed_payment, override_min, accepts_new_charges, credit_limit,
-  annual_fee, annual_fee_month, carrying_balance, notes, status,
-  created_at, updated_at
+  id, user_id, name, debt_type, balance, apr, start_date, cadence, due_date,
+  end_date, payment_kind, fixed_payment, override_min, accepts_new_charges,
+  credit_limit, annual_fee, annual_fee_month, carrying_balance, notes,
+  balance_as_of, status, created_at, updated_at
 `;
 
 const EVENT_COLUMNS = `
-  id, user_id, name, amount, direction, start_date, cadence, end_date,
+  id, user_id, name, amount, direction, start_date, cadence, due_date, end_date,
   can_put_on_card, payment_method, payment_debt_id, locked,
   is_initial_deposit, status, created_at, updated_at
 `;
@@ -42,7 +42,10 @@ function mapDebt(row) {
     debtType: row.debt_type,
     balance: numeric(row.balance),
     apr: numeric(row.apr),
-    dueDay: Number(row.due_day),
+    startDate: row.start_date,
+    cadence: row.cadence || 'monthly',
+    dueDate: row.due_date,
+    endDate: row.end_date,
     paymentKind: row.payment_kind,
     fixedPayment: numeric(row.fixed_payment),
     overrideMin: numeric(row.override_min),
@@ -52,6 +55,7 @@ function mapDebt(row) {
     annualFeeMonth: row.annual_fee_month === null ? null : Number(row.annual_fee_month),
     carryingBalance: row.carrying_balance,
     notes: row.notes,
+    balanceAsOf: row.balance_as_of,
     status: asItemStatus(row.status),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -78,6 +82,7 @@ function mapEvent(row) {
     direction: row.direction,
     startDate: row.start_date,
     cadence: row.cadence,
+    dueDate: row.due_date,
     endDate: row.end_date,
     canPutOnCard: row.can_put_on_card,
     paymentMethod: row.payment_method,
@@ -198,10 +203,11 @@ async function getDebt(userId, debtId) {
 async function createDebt(userId, input) {
   const { rows } = await pool.query(
     `INSERT INTO debts (
-       user_id, name, debt_type, balance, apr, due_day, payment_kind,
-       fixed_payment, override_min, accepts_new_charges, credit_limit,
-       annual_fee, annual_fee_month, carrying_balance, notes, status
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       user_id, name, debt_type, balance, apr, start_date, cadence, due_date,
+       end_date, payment_kind, fixed_payment, override_min, accepts_new_charges,
+       credit_limit, annual_fee, annual_fee_month, carrying_balance, notes,
+       balance_as_of, status
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
        RETURNING ${DEBT_COLUMNS}`,
     [
       userId,
@@ -209,7 +215,10 @@ async function createDebt(userId, input) {
       input.debtType,
       input.balance,
       input.apr,
-      input.dueDay,
+      input.startDate,
+      input.cadence || 'monthly',
+      input.dueDate,
+      input.endDate ?? null,
       input.paymentKind,
       input.fixedPayment,
       input.overrideMin,
@@ -219,6 +228,7 @@ async function createDebt(userId, input) {
       input.annualFeeMonth,
       input.carryingBalance,
       input.notes,
+      input.balanceAsOf || input.startDate,
       asItemStatus(input.status)
     ]
   );
@@ -228,11 +238,11 @@ async function createDebt(userId, input) {
 async function updateDebt(userId, debtId, input) {
   const { rows } = await pool.query(
     `UPDATE debts SET
-       name = $3, debt_type = $4, balance = $5, apr = $6, due_day = $7,
-       payment_kind = $8, fixed_payment = $9, override_min = $10,
-       accepts_new_charges = $11, credit_limit = $12, annual_fee = $13,
-       annual_fee_month = $14, carrying_balance = $15, notes = $16,
-       status = $17
+       name = $3, debt_type = $4, balance = $5, apr = $6, start_date = $7,
+       cadence = $8, due_date = $9, end_date = $10, payment_kind = $11,
+       fixed_payment = $12, override_min = $13, accepts_new_charges = $14,
+       credit_limit = $15, annual_fee = $16, annual_fee_month = $17,
+       carrying_balance = $18, notes = $19, balance_as_of = $20, status = $21
      WHERE id = $1 AND user_id = $2
      RETURNING ${DEBT_COLUMNS}`,
     [
@@ -242,7 +252,10 @@ async function updateDebt(userId, debtId, input) {
       input.debtType,
       input.balance,
       input.apr,
-      input.dueDay,
+      input.startDate,
+      input.cadence || 'monthly',
+      input.dueDate,
+      input.endDate ?? null,
       input.paymentKind,
       input.fixedPayment,
       input.overrideMin,
@@ -252,6 +265,7 @@ async function updateDebt(userId, debtId, input) {
       input.annualFeeMonth,
       input.carryingBalance,
       input.notes,
+      input.balanceAsOf || input.startDate,
       asItemStatus(input.status)
     ]
   );
@@ -351,7 +365,7 @@ async function listEvents(userId) {
     `SELECT ${EVENT_COLUMNS}
        FROM cash_events
       WHERE user_id = $1
-      ORDER BY is_initial_deposit DESC, direction, start_date, id`,
+      ORDER BY direction, start_date, id`,
     [userId]
   );
   return rows.map(mapEvent);
@@ -360,10 +374,10 @@ async function listEvents(userId) {
 async function createEvent(userId, input) {
   const { rows } = await pool.query(
     `INSERT INTO cash_events (
-       user_id, name, amount, direction, start_date, cadence, end_date,
+       user_id, name, amount, direction, start_date, cadence, due_date, end_date,
        can_put_on_card, payment_method, payment_debt_id, locked,
        is_initial_deposit, status
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        RETURNING ${EVENT_COLUMNS}`,
     [
       userId,
@@ -372,6 +386,7 @@ async function createEvent(userId, input) {
       input.direction,
       input.startDate,
       input.cadence,
+      input.dueDate || input.startDate,
       input.endDate,
       input.canPutOnCard,
       input.paymentMethod,
@@ -388,8 +403,9 @@ async function updateEvent(userId, eventId, input) {
   const { rows } = await pool.query(
     `UPDATE cash_events SET
        name = $3, amount = $4, direction = $5, start_date = $6, cadence = $7,
-       end_date = $8, can_put_on_card = $9, payment_method = $10,
-       payment_debt_id = $11, locked = $12, status = $13
+       due_date = $8, end_date = $9, can_put_on_card = $10, payment_method = $11,
+       payment_debt_id = $12, locked = $13, status = $14,
+       is_initial_deposit = false
      WHERE id = $1 AND user_id = $2
      RETURNING ${EVENT_COLUMNS}`,
     [
@@ -400,6 +416,7 @@ async function updateEvent(userId, eventId, input) {
       input.direction,
       input.startDate,
       input.cadence,
+      input.dueDate || input.startDate,
       input.endDate,
       input.canPutOnCard,
       input.paymentMethod,
@@ -439,7 +456,7 @@ async function setDebtStatus(userId, debtId, status) {
 async function setEventStatus(userId, eventId, status) {
   const { rows } = await pool.query(
     `UPDATE cash_events SET status = $3
-      WHERE id = $1 AND user_id = $2 AND NOT is_initial_deposit
+      WHERE id = $1 AND user_id = $2
       RETURNING ${EVENT_COLUMNS}`,
     [eventId, userId, asItemStatus(status)]
   );
@@ -460,7 +477,7 @@ async function setInitialDeposit(userId, { amount, date, name }) {
   if (existing.rowCount > 0) {
     const { rows } = await pool.query(
       `UPDATE cash_events
-          SET name = $3, amount = $4, start_date = $5, status = 'active'
+          SET name = $3, amount = $4, start_date = $5, due_date = $5, status = 'active'
         WHERE id = $1 AND user_id = $2
         RETURNING ${EVENT_COLUMNS}`,
       [existing.rows[0].id, userId, name, amount, date]
@@ -473,6 +490,7 @@ async function setInitialDeposit(userId, { amount, date, name }) {
     amount,
     direction: 'gain',
     startDate: date,
+    dueDate: date,
     cadence: 'one_time',
     endDate: null,
     canPutOnCard: false,
@@ -490,7 +508,7 @@ async function clearPlan(userId) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    // Charges first: they reference debts.
+    await client.query('DELETE FROM day_actuals WHERE user_id = $1', [userId]);
     await client.query('DELETE FROM cash_events WHERE user_id = $1', [userId]);
     await client.query('DELETE FROM debts WHERE user_id = $1', [userId]);
     await client.query(
@@ -526,7 +544,8 @@ async function replacePlan(userId, plan) {
       annualFee: 0,
       annualFeeMonth: null,
       notes: null,
-      ...debt
+      ...debt,
+      balanceAsOf: debt.balanceAsOf || debt.startDate
     });
     debtIdsByName.set(debt.name, created.id);
 
@@ -535,11 +554,27 @@ async function replacePlan(userId, plan) {
     }
   }
 
-  if (plan.initialCash) {
-    await setInitialDeposit(userId, plan.initialCash);
-  }
+  const seededEvents = plan.initialCash
+    ? [
+        {
+          name: plan.initialCash.name || 'Initial cash',
+          amount: plan.initialCash.amount,
+          direction: 'gain',
+          startDate: plan.initialCash.date,
+          dueDate: plan.initialCash.date,
+          cadence: 'one_time',
+          endDate: null,
+          canPutOnCard: false,
+          paymentMethod: 'cash',
+          paymentDebtId: null,
+          locked: false,
+          isInitialDeposit: false
+        },
+        ...plan.events
+      ]
+    : plan.events;
 
-  for (const event of plan.events) {
+  for (const event of seededEvents) {
     const { pinnedDebtName, ...fields } = event;
     await createEvent(userId, {
       endDate: null,
@@ -553,14 +588,73 @@ async function replacePlan(userId, plan) {
   }
 }
 
+function mapActual(row) {
+  return {
+    date: row.occurred_on,
+    itemKey: row.item_key,
+    status: row.status,
+    amount: numeric(row.amount),
+    plannedAmount: numeric(row.planned_amount),
+    debtId: row.debt_id === null ? null : Number(row.debt_id),
+    method: row.method
+  };
+}
+
+async function listActuals(userId) {
+  const { rows } = await pool.query(
+    `SELECT occurred_on, item_key, status, amount, planned_amount, debt_id, method
+       FROM day_actuals
+      WHERE user_id = $1
+      ORDER BY occurred_on, item_key`,
+    [userId]
+  );
+  return rows.map(mapActual);
+}
+
+async function upsertActual(userId, input) {
+  const { rows } = await pool.query(
+    `INSERT INTO day_actuals (
+       user_id, occurred_on, item_key, status, amount, planned_amount, debt_id, method
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     ON CONFLICT (user_id, occurred_on, item_key) DO UPDATE SET
+       status = EXCLUDED.status,
+       amount = EXCLUDED.amount,
+       planned_amount = EXCLUDED.planned_amount,
+       debt_id = EXCLUDED.debt_id,
+       method = EXCLUDED.method
+     RETURNING occurred_on, item_key, status, amount, planned_amount, debt_id, method`,
+    [
+      userId,
+      input.date,
+      input.itemKey,
+      input.status,
+      input.amount ?? null,
+      input.plannedAmount ?? null,
+      input.debtId ?? null,
+      input.method ?? null
+    ]
+  );
+  return mapActual(rows[0]);
+}
+
+async function deleteActual(userId, date, itemKey) {
+  const { rowCount } = await pool.query(
+    `DELETE FROM day_actuals
+      WHERE user_id = $1 AND occurred_on = $2 AND item_key = $3`,
+    [userId, date, itemKey]
+  );
+  return rowCount > 0;
+}
+
 /** Everything the engine needs, in one round of queries. */
 async function loadPlan(userId) {
-  const [settings, debts, events] = await Promise.all([
+  const [settings, debts, events, actuals] = await Promise.all([
     getSettings(userId),
     listDebts(userId),
-    listEvents(userId)
+    listEvents(userId),
+    listActuals(userId)
   ]);
-  return { settings, debts, events };
+  return { settings, debts, events, actuals };
 }
 
 module.exports = {
@@ -583,5 +677,8 @@ module.exports = {
   setInitialDeposit,
   clearPlan,
   replacePlan,
-  loadPlan
+  loadPlan,
+  listActuals,
+  upsertActual,
+  deleteActual
 };

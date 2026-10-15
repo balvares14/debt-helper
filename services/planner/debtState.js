@@ -9,7 +9,7 @@
  */
 
 const { toCents, monthlyInterest } = require('./money');
-const { toDayIndex, partsOf, dueDateInMonth, monthKey } = require('./dates');
+const { toDayIndex, partsOf, monthKey } = require('./dates');
 
 const MIN_PAYMENT_FLOOR_CENTS = 2500; // the usual "$25 or 1%, whichever is greater"
 const MIN_PAYMENT_BALANCE_RATE = 0.01;
@@ -71,6 +71,11 @@ function createDebtState(debt) {
     name: debt.name,
     type: debt.debtType,
     standardApr,
+    startDate: debt.startDate || null,
+    balanceAsOf: debt.balanceAsOf || null,
+    cadence: debt.cadence || 'monthly',
+    dueDate: debt.dueDate || null,
+    endDate: debt.endDate || null,
     dueDay: debt.dueDay,
     paymentKind: debt.paymentKind,
     fixedPaymentCents: toCents(debt.fixedPayment),
@@ -357,8 +362,11 @@ function deferredRisk(state, date) {
   };
 }
 
-function dueDateFor(state, iso) {
-  return dueDateInMonth(iso, state.dueDay);
+/** True once the calendar day has reached this debt's start date. */
+function isActiveOn(state, date) {
+  if (state.startDate && date < state.startDate) return false;
+  if (state.endDate && date > state.endDate) return false;
+  return true;
 }
 
 module.exports = {
@@ -382,5 +390,5 @@ module.exports = {
   effectiveAprPercent,
   soonestPromoEnd,
   deferredRisk,
-  dueDateFor
+  isActiveOn
 };

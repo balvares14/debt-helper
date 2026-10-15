@@ -1,9 +1,11 @@
 /**
  * The projection engine.
  *
- * Walks the calendar one day at a time from today, applying gains, charges,
- * interest, required payments and extra payoff, and records what the balance
- * looks like on every one of those days.
+ * Walks the calendar one day at a time from the earliest dated gain or charge
+ * through the plan horizon. Days before today replay the cash ledger, plus
+ * any extras or requireds the user has confirmed or changed. Unconfirmed
+ * history payments stay off so they do not double-count the debt snapshot.
+ * Today and beyond apply the full plan, honoring skip/modify reviews.
  *
  * The rule that shapes the whole design: extra payoff may never create a
  * shortfall later. Deciding that from today's balance alone is not enough —
@@ -26,6 +28,9 @@ const DEFERRED_PROBE_MAX_DAYS = 550;
 
 /** Days shown on the Plan page before the "…" that opens the full payoff list. */
 const NEAR_TERM_DAYS = 45;
+
+/** How far back the engine proposes extras for review on past paydays. */
+const EXTRA_REVIEW_LOOKBACK_DAYS = 90;
 
 const DEFAULT_HORIZON_MONTHS = 60;
 
@@ -67,6 +72,135 @@ function totalOutstandingCents(state) {
   return state.debts.reduce((sum, debt) => sum + debtState.totalBalanceCents(debt), 0);
 }
 
+function eventItemKey(kind, eventId) {
+  return `${kind}:event:${eventId}`;
+}
+
+function debtItemKey(kind, debtId) {
+  return `${kind}:debt:${debtId}`;
+}
+
+function parseDebtIdFromKey(itemKey) {
+  const match = /^[a-z_]+:debt:(\d+)$/.exec(itemKey || '');
+  return match ? Number(match[1]) : null;
+}
+
+function buildActualsMap(actuals) {
+  const map = new Map();
+  for (const actual of actuals || []) {
+    if (!actual || !actual.date || !actual.itemKey) continue;
+    if (!map.has(actual.date)) map.set(actual.date, new Map());
+    map.get(actual.date).set(actual.itemKey, actual);
+  }
+  return map;
+}
+
+function lookupActual(ctx, date, itemKey) {
+  const day = ctx.actuals.get(date);
+  return day ? day.get(itemKey) || null : null;
+}
+
+function extraActualsOn(ctx, date) {
+  const day = ctx.actuals.get(date);
+  if (!day) return [];
+  const found = [];
+  for (const [itemKey, actual] of day) {
+    if (itemKey.startsWith('extra_payment:debt:')) found.push({ itemKey, actual });
+  }
+  return found;
+}
+
+/**
+ * History extras/requireds stay off until confirmed so the current snapshot
+ * is not paid twice. Gains, charges, and anything from today forward apply
+ * unless the user skipped them. A modified amount is used even if it dips
+ * under the cash floor — that is what they said they did.
+ */
+function resolveActual(ctx, date, itemKey, plannedCents, defaultApply) {
+  const actual = lookupActual(ctx, date, itemKey);
+  if (!actual) {
+    return {
+      apply: defaultApply,
+      amountCents: defaultApply ? plannedCents : 0,
+      review: null,
+      plannedCents
+    };
+  }
+  if (actual.status === 'skipped') {
+    return { apply: false, amountCents: 0, review: 'skipped', plannedCents };
+  }
+  const amountCents = actual.amount === null || actual.amount === undefined
+    ? plannedCents
+    : toCents(actual.amount);
+  return {
+    apply: true,
+    amountCents,
+    review: actual.status === 'modified' ? 'modified' : 'confirmed',
+    plannedCents
+  };
+}
+
+function shouldMutateDebt(ctx, debt, date) {
+  const asOf = debt.balanceAsOf || ctx.today;
+  return date > asOf;
+}
+
+/**
+ * Planned extras on a clone so a skip cannot dump leftover surplus onto the
+ * next debt. Later already-planned extras still happen unless they are skipped
+ * too.
+ */
+function planExtras(ctx, state, date) {
+  const planned = [];
+  const work = cloneState(state);
+  let budget = clampToZero(surplusAboveFloorCents(ctx, work, date));
+  let guard = work.debts.length + 1;
+  while (budget > 0 && guard > 0 && totalOutstandingCents(work) > 0) {
+    guard -= 1;
+    const target = chooseExtraTarget(ctx, work, date);
+    if (!target) break;
+    const owed = debtState.totalBalanceCents(target.debt);
+    const amount = Math.min(budget, owed);
+    if (amount <= 0) break;
+    const paid = debtState.payExtra(target.debt, amount);
+    work.cashCents -= paid;
+    budget -= paid;
+    planned.push({
+      debtId: target.debt.id,
+      amountCents: paid,
+      reason: target.reason
+    });
+  }
+  return planned;
+}
+
+/** The first dated gain, charge, or debt, or today when nothing is dated earlier. */
+function buildDebtDueMap(debts, fromISO, toISO) {
+  const map = new Map();
+  for (const debt of debts || []) {
+    for (const date of dates.occurrencesBetween(debt, fromISO, toISO)) {
+      if (!map.has(date)) map.set(date, new Set());
+      map.get(date).add(debt.id);
+    }
+  }
+  return map;
+}
+
+function isDebtDue(ctx, debt, date) {
+  const ids = ctx.debtDueIdsByDate && ctx.debtDueIdsByDate.get(date);
+  return ids ? ids.has(debt.id) : false;
+}
+
+function earliestPlanDate(events, debts, today) {
+  let earliest = today;
+  const consider = (value) => {
+    if (value && dates.isValidISODate(value) && value < earliest) earliest = value;
+  };
+  for (const event of events || []) consider(event.startDate);
+  for (const debt of debts || []) consider(debt.startDate);
+  return earliest;
+}
+
 // ---------------------------------------------------------------------------
 // Spend routing
 // ---------------------------------------------------------------------------
@@ -84,8 +218,15 @@ function routeCharge(ctx, state, event, amountCents, date) {
     ? state.debts.find((debt) => String(debt.id) === String(event.paymentDebtId))
     : null;
 
-  // A pinned card stays pinned, even when it no longer fits.
+  // A pinned card stays pinned, even when it no longer fits — unless it
+  // has not started yet.
   if (event.paymentMethod === 'card' && pinnedDebt) {
+    if (!debtState.isActiveOn(pinnedDebt, date)) {
+      return {
+        method: 'cash',
+        reason: `${pinnedDebt.name} has not started yet, so this comes out of cash.`
+      };
+    }
     const room = debtState.availableCreditCents(pinnedDebt);
     return {
       method: 'card',
@@ -102,7 +243,7 @@ function routeCharge(ctx, state, event, amountCents, date) {
   }
 
   const cards = state.debts
-    .filter((debt) => debt.acceptsNewCharges)
+    .filter((debt) => debt.acceptsNewCharges && debtState.isActiveOn(debt, date))
     .map((debt) => ({
       debt,
       apr: debtState.purchaseApr(debt, date),
@@ -192,7 +333,7 @@ function deferredNeedsSurplus(ctx, state, debtIndex, date) {
 function chooseExtraTarget(ctx, state, date) {
   const live = state.debts
     .map((debt, index) => ({ debt, index }))
-    .filter(({ debt }) => debtState.totalBalanceCents(debt) > 0);
+    .filter(({ debt }) => debtState.totalBalanceCents(debt) > 0 && debtState.isActiveOn(debt, date));
 
   if (live.length === 0) return null;
 
@@ -287,40 +428,82 @@ function surplusAboveFloorCents(ctx, state, date) {
 // ---------------------------------------------------------------------------
 
 /**
- * Advances `state` through a single calendar day.
+ * Gains always add cash. Charges either come out of cash or go on a card.
  *
- * Both the real projection and the lookahead probes run through here, which is
- * what makes the probe trustworthy: it is the same code, just with `allowExtra`
- * off and nothing recorded.
+ * Before today, card and optimizer charges are left alone: those balances
+ * already sit in the debt snapshot. Only an explicit cash charge moves the
+ * bank account.
  */
-function stepDay(ctx, state, date, options) {
-  const { allowExtra } = options;
-  const record = options.record || null;
+function applyLedgerEvents(ctx, state, date, record, options) {
+  const cashChargesOnly = !!options.cashChargesOnly;
 
-  if (record) record.startCashCents = state.cashCents;
-
-  // 1. Retire promos that ended, charging deferred back-interest if it applies.
-  for (const debt of state.debts) {
-    debtState.expirePromos(debt, date, record ? (event) => record.backInterest.push(event) : null);
-  }
-
-  // 2. Money in before money out, so a same-day paycheck covers a same-day bill.
   for (const event of ctx.occurrences.get(date) || []) {
     if (event.direction !== 'gain') continue;
-    const amountCents = toCents(event.amount);
-    state.cashCents += amountCents;
-    if (record) record.gains.push({ id: event.id, name: event.name, amountCents });
+    const plannedCents = toCents(event.amount);
+    const itemKey = eventItemKey('gain', event.id);
+    const decision = resolveActual(ctx, date, itemKey, plannedCents, true);
+    if (decision.apply) state.cashCents += decision.amountCents;
+    if (record) {
+      record.gains.push({
+        id: event.id,
+        name: event.name,
+        amountCents: decision.apply ? decision.amountCents : 0,
+        plannedCents,
+        itemKey,
+        review: decision.review
+      });
+    }
   }
 
-  // 3. Charges, each either paid from cash or pushed onto a card.
   for (const event of ctx.occurrences.get(date) || []) {
     if (event.direction !== 'charge') continue;
-    const amountCents = toCents(event.amount);
-    const route = routeCharge(ctx, state, event, amountCents, date);
+    const plannedCents = toCents(event.amount);
+    const itemKey = eventItemKey('charge', event.id);
+    const decision = resolveActual(ctx, date, itemKey, plannedCents, true);
+    const amountCents = decision.apply ? decision.amountCents : 0;
 
-    if (route.method === 'card' && route.debt) {
-      debtState.addCharge(route.debt, amountCents, date);
-    } else {
+    if (cashChargesOnly) {
+      const paidFromCash = event.paymentMethod !== 'card' && event.paymentMethod !== 'optimizer';
+      if (paidFromCash) state.cashCents -= amountCents;
+      if (record) {
+        record.charges.push({
+          id: event.id,
+          name: event.name,
+          amountCents,
+          plannedCents,
+          itemKey,
+          review: decision.review,
+          method: paidFromCash ? 'cash' : 'card',
+          debtId: event.paymentDebtId || null,
+          debtName: null,
+          pinned: !!event.locked,
+          overLimit: false,
+          optimized: false,
+          reason: !decision.apply
+            ? 'Marked as not happening.'
+            : paidFromCash
+              ? 'Paid from cash.'
+              : 'Already in the current card balance — not added again.'
+        });
+      }
+      continue;
+    }
+
+    let route = {
+      method: 'cash',
+      debt: null,
+      pinned: false,
+      overLimit: false,
+      reason: 'Marked as not happening.'
+    };
+    if (decision.apply && amountCents > 0) {
+      route = routeCharge(ctx, state, event, amountCents, date);
+      if (route.method === 'card' && route.debt) {
+        debtState.addCharge(route.debt, amountCents, date);
+      } else {
+        state.cashCents -= amountCents;
+      }
+    } else if (decision.apply) {
       state.cashCents -= amountCents;
     }
 
@@ -329,6 +512,9 @@ function stepDay(ctx, state, date, options) {
         id: event.id,
         name: event.name,
         amountCents,
+        plannedCents,
+        itemKey,
+        review: decision.review,
         method: route.method,
         debtId: route.debt ? route.debt.id : null,
         debtName: route.debt ? route.debt.name : null,
@@ -340,74 +526,51 @@ function stepDay(ctx, state, date, options) {
     }
   }
 
-  // 4. Due dates: charge the month's interest and any annual fee, then pay
-  //    what is required to stay current.
-  for (const debt of state.debts) {
-    if (debtState.dueDateFor(debt, date) !== date) continue;
+  if (record) record.ledgerCashCents = state.cashCents;
+}
 
-    const feeCents = debtState.applyAnnualFee(debt, date);
-    if (feeCents > 0 && record) {
-      record.fees.push({ debtId: debt.id, debtName: debt.name, amountCents: feeCents });
-    }
+/**
+ * Advances `state` through a single calendar day.
+ *
+ * Both the real projection and the lookahead probes run through here, which is
+ * what makes the probe trustworthy: it is the same code, just with `allowExtra`
+ * off and nothing recorded.
+ */
+function stepDay(ctx, state, date, options) {
+  const { allowExtra } = options;
+  const record = options.record || null;
+  const isHistory = dates.toDayIndex(date) < ctx.todayDayIndex;
 
-    const interestCents = debtState.accrueMonthlyInterest(debt, date);
-    if (interestCents > 0 && record) {
-      record.interest.push({ debtId: debt.id, debtName: debt.name, amountCents: interestCents });
-    }
+  if (record) record.startCashCents = state.cashCents;
 
-    const required = debtState.requiredPaymentCents(debt, interestCents);
-    if (required <= 0) continue;
-
-    // The payment is made even when cash does not cover it: the balance is a
-    // real obligation, and showing the account going negative is the point.
-    // Skipping it would quietly model a missed payment as if it were free.
-    const paid = debtState.payRequired(debt, required);
-    state.cashCents -= paid;
-
-    if (record) {
-      record.payments.push({
-        debtId: debt.id,
-        debtName: debt.name,
-        amountCents: paid,
-        kind: 'required',
-        aprPercent: debtState.effectiveAprPercent(debt),
-        reason: requiredReason(debt)
-      });
-    }
+  // Days before today replay the ledger and only the payments the user has
+  // confirmed or changed. Unconfirmed extras stay off so they do not spend
+  // money that is still in the bank, or pay a snapshot twice.
+  if (isHistory) {
+    applyLedgerEvents(ctx, state, date, record, { cashChargesOnly: true });
+    applyDuePayments(ctx, state, date, record, { isHistory: true });
+    applyExtraPayments(ctx, state, date, record, { isHistory: true, allowExtra: true });
+    if (record) record.endCashCents = state.cashCents;
+    return;
   }
+
+  // 1. Retire promos that ended, charging deferred back-interest if it applies.
+  for (const debt of state.debts) {
+    if (!debtState.isActiveOn(debt, date)) continue;
+    debtState.expirePromos(debt, date, record ? (event) => record.backInterest.push(event) : null);
+  }
+
+  // 2–3. Money in before money out, so a same-day paycheck covers a same-day bill.
+  applyLedgerEvents(ctx, state, date, record, { cashChargesOnly: false });
+
+  // 4. Due dates: charge the month's interest and any annual fee, then pay
+  //    what is required to stay current — unless the user skipped or changed it.
+  applyDuePayments(ctx, state, date, record, { isHistory: false });
 
   // 5. Extra payoff, funded only by cash that stays clear of the floor
-  //    through the rest of the plan.
-  if (allowExtra && ctx.decisionDays.has(date) && totalOutstandingCents(state) > 0) {
-    let budget = clampToZero(surplusAboveFloorCents(ctx, state, date));
-
-    // Repeat so a small debt does not soak up a whole paycheck's surplus.
-    let guard = state.debts.length + 1;
-    while (budget > 0 && guard > 0 && totalOutstandingCents(state) > 0) {
-      guard -= 1;
-      const target = chooseExtraTarget(ctx, state, date);
-      if (!target) break;
-
-      const owed = debtState.totalBalanceCents(target.debt);
-      const amount = Math.min(budget, owed);
-      if (amount <= 0) break;
-
-      const paid = debtState.payExtra(target.debt, amount);
-      state.cashCents -= paid;
-      budget -= paid;
-
-      if (record) {
-        record.payments.push({
-          debtId: target.debt.id,
-          debtName: target.debt.name,
-          amountCents: paid,
-          kind: 'extra',
-          aprPercent: debtState.effectiveAprPercent(target.debt),
-          reason: target.reason
-        });
-      }
-    }
-  }
+  //    through the rest of the plan. Planned first, then reviewed, so a
+  //    skip cannot dump leftover surplus onto the next debt.
+  applyExtraPayments(ctx, state, date, record, { isHistory: false, allowExtra });
 
   // 6. Note the day each debt clears.
   for (const debt of state.debts) {
@@ -417,6 +580,122 @@ function stepDay(ctx, state, date, options) {
   }
 
   if (record) record.endCashCents = state.cashCents;
+}
+
+function applyDuePayments(ctx, state, date, record, { isHistory }) {
+  for (const debt of state.debts) {
+    if (!isDebtDue(ctx, debt, date)) continue;
+
+    let interestCents = 0;
+    if (!isHistory) {
+      const feeCents = debtState.applyAnnualFee(debt, date);
+      if (feeCents > 0 && record) {
+        record.fees.push({ debtId: debt.id, debtName: debt.name, amountCents: feeCents });
+      }
+      interestCents = debtState.accrueMonthlyInterest(debt, date);
+      if (interestCents > 0 && record) {
+        record.interest.push({ debtId: debt.id, debtName: debt.name, amountCents: interestCents });
+      }
+    }
+
+    const required = debtState.requiredPaymentCents(debt, isHistory ? 0 : interestCents);
+    const itemKey = debtItemKey('required_payment', debt.id);
+    if (required <= 0 && !lookupActual(ctx, date, itemKey)) continue;
+
+    const decision = resolveActual(ctx, date, itemKey, required, !isHistory);
+    let paid = 0;
+    if (decision.apply && decision.amountCents > 0) {
+      if (!isHistory || shouldMutateDebt(ctx, debt, date)) {
+        paid = debtState.payRequired(debt, decision.amountCents);
+      } else {
+        paid = decision.amountCents;
+      }
+      state.cashCents -= paid;
+    }
+
+    const lookbackStart = ctx.todayDayIndex - EXTRA_REVIEW_LOOKBACK_DAYS;
+    const showHistory = !isHistory
+      || decision.review
+      || shouldMutateDebt(ctx, debt, date)
+      || dates.toDayIndex(date) >= lookbackStart;
+    if (record && showHistory && (required > 0 || decision.review)) {
+      record.payments.push({
+        debtId: debt.id,
+        debtName: debt.name,
+        amountCents: paid,
+        plannedCents: decision.plannedCents,
+        kind: 'required',
+        itemKey,
+        review: decision.review,
+        aprPercent: debtState.effectiveAprPercent(debt),
+        reason: requiredReason(debt)
+      });
+    }
+  }
+}
+
+function applyExtraPayments(ctx, state, date, record, { isHistory, allowExtra }) {
+  const recorded = extraActualsOn(ctx, date);
+  if (!allowExtra && recorded.length === 0) return;
+
+  const lookbackStart = ctx.todayDayIndex - EXTRA_REVIEW_LOOKBACK_DAYS;
+  const canProposeHistory = !isHistory || (
+    !!record && dates.toDayIndex(date) >= lookbackStart
+  );
+  const shouldPlan = allowExtra
+    && ctx.decisionDays.has(date)
+    && totalOutstandingCents(state) > 0
+    && canProposeHistory;
+
+  const planned = shouldPlan ? planExtras(ctx, state, date) : [];
+  const seen = new Set();
+
+  for (const extra of planned) {
+    seen.add(extra.debtId);
+    applyOneExtra(ctx, state, date, record, extra, { isHistory, allowExtra });
+  }
+
+  for (const { itemKey, actual } of recorded) {
+    const debtId = actual.debtId || parseDebtIdFromKey(itemKey);
+    if (!debtId || seen.has(debtId)) continue;
+    applyOneExtra(ctx, state, date, record, {
+      debtId,
+      amountCents: toCents(actual.amount),
+      reason: 'You recorded this extra payment.'
+    }, { isHistory, allowExtra });
+  }
+}
+
+function applyOneExtra(ctx, state, date, record, extra, { isHistory, allowExtra }) {
+  const debt = state.debts.find((entry) => entry.id === extra.debtId);
+  if (!debt) return;
+
+  const itemKey = debtItemKey('extra_payment', extra.debtId);
+  const decision = resolveActual(ctx, date, itemKey, extra.amountCents, !isHistory && allowExtra);
+
+  let paid = 0;
+  if (decision.apply && decision.amountCents > 0) {
+    if (!isHistory || shouldMutateDebt(ctx, debt, date)) {
+      paid = debtState.payExtra(debt, decision.amountCents);
+    } else {
+      paid = decision.amountCents;
+    }
+    state.cashCents -= paid;
+  }
+
+  if (record) {
+    record.payments.push({
+      debtId: debt.id,
+      debtName: debt.name,
+      amountCents: paid,
+      plannedCents: decision.plannedCents,
+      kind: 'extra',
+      itemKey,
+      review: decision.review,
+      aprPercent: debtState.effectiveAprPercent(debt),
+      reason: extra.reason
+    });
+  }
 }
 
 function requiredReason(debt) {
@@ -430,6 +709,7 @@ function emptyRecord(date) {
   return {
     date,
     startCashCents: 0,
+    ledgerCashCents: 0,
     endCashCents: 0,
     gains: [],
     charges: [],
@@ -474,6 +754,8 @@ function run(ctx, startingCashCents, allowExtra, collectFrom, collectTo) {
   let firstShortfallDate = null;
   let worstShortfallCents = 0;
   let debtFreeDate = null;
+  let cashOnHandCents = startingCashCents;
+  let sawToday = false;
 
   const startedWithDebt = totalOutstandingCents(state) > 0;
   if (!startedWithDebt) debtFreeDate = ctx.today;
@@ -481,32 +763,42 @@ function run(ctx, startingCashCents, allowExtra, collectFrom, collectTo) {
   for (let dayIndex = ctx.startDayIndex; dayIndex <= ctx.endDayIndex; dayIndex += 1) {
     const date = dates.toISO(dayIndex);
     const record = emptyRecord(date);
+    const onOrAfterToday = dayIndex >= ctx.todayDayIndex;
 
     stepDay(ctx, state, date, { allowExtra, record });
 
-    // --- running totals -------------------------------------------------
+    if (date === ctx.today) {
+      cashOnHandCents = record.ledgerCashCents;
+      sawToday = true;
+      lowestCashCents = state.cashCents;
+      lowestCashDate = date;
+    }
+
+    // --- running totals (today and beyond; history is ledger-only) ------
     const interestToday = sumAmounts(record.interest) + sumAmounts(record.backInterest);
     const paidToday = sumAmounts(record.payments);
     const cardSpendToday = record.charges
       .filter((charge) => charge.method === 'card')
       .reduce((sum, charge) => sum + charge.amountCents, 0);
 
-    totalInterestCents += interestToday;
-    totalPaidCents += paidToday;
-    totalCardSpendCents += cardSpendToday;
+    if (onOrAfterToday) {
+      totalInterestCents += interestToday;
+      totalPaidCents += paidToday;
+      totalCardSpendCents += cardSpendToday;
 
-    if (state.cashCents < lowestCashCents) {
-      lowestCashCents = state.cashCents;
-      lowestCashDate = date;
-    }
+      if (state.cashCents < lowestCashCents) {
+        lowestCashCents = state.cashCents;
+        lowestCashDate = date;
+      }
 
-    if (state.cashCents < 0) {
-      if (!firstShortfallDate) firstShortfallDate = date;
-      worstShortfallCents = Math.max(worstShortfallCents, -state.cashCents);
-    }
+      if (state.cashCents < 0) {
+        if (!firstShortfallDate) firstShortfallDate = date;
+        worstShortfallCents = Math.max(worstShortfallCents, -state.cashCents);
+      }
 
-    if (!debtFreeDate && startedWithDebt && totalOutstandingCents(state) <= 0) {
-      debtFreeDate = date;
+      if (!debtFreeDate && startedWithDebt && totalOutstandingCents(state) <= 0) {
+        debtFreeDate = date;
+      }
     }
 
     // --- month rollup (whole horizon, cheap) ----------------------------
@@ -554,22 +846,37 @@ function run(ctx, startingCashCents, allowExtra, collectFrom, collectTo) {
     if (state.cashCents >= 0 && state.cashCents < ctx.cashFloorCents) month.hasBelowFloor = true;
 
     // --- detail for the requested window --------------------------------
-    if (dayIndex >= collectFromIndex && dayIndex <= collectToIndex) {
+    // Through payoff plus one month by default. Past that only if the
+    // caller asked to keep going (they paged the calendar, or today is
+    // already past payoff).
+    const autoEndIndex = startedWithDebt && debtFreeDate
+      ? dates.toDayIndex(dates.endOfMonth(dates.addMonths(debtFreeDate, 1)))
+      : collectToIndex;
+    const livingPastPayoff = startedWithDebt && debtFreeDate
+      && ctx.todayDayIndex > dates.toDayIndex(debtFreeDate);
+    const todayPadIndex = dates.toDayIndex(dates.endOfMonth(dates.addMonths(ctx.today, 1)));
+    const detailEndIndex = livingPastPayoff
+      ? Math.max(autoEndIndex, todayPadIndex, ctx.continuePastPayoff ? collectToIndex : todayPadIndex)
+      : ctx.continuePastPayoff
+        ? Math.max(autoEndIndex, collectToIndex)
+        : autoEndIndex;
+
+    if (dayIndex >= collectFromIndex && dayIndex <= collectToIndex && dayIndex <= detailEndIndex) {
       days.push(serializeDay(record, state, ctx));
     }
 
     // Extra payoff and routing, through the day the last debt clears. The Plan
     // page shows the next few weeks and a popup lists the rest through payoff.
-    if (allowExtra && startedWithDebt && (!debtFreeDate || date === debtFreeDate)) {
+    if (onOrAfterToday && allowExtra && startedWithDebt && (!debtFreeDate || date === debtFreeDate)) {
       collectActions(actions, record);
     }
 
     // Balance-over-time for the line chart: weekly, plus the days money
     // actually moves, so avalanche drops are not smoothed away.
-    if (allowExtra && startedWithDebt && (!debtFreeDate || date === debtFreeDate)) {
+    if (onOrAfterToday && allowExtra && startedWithDebt && (!debtFreeDate || date === debtFreeDate)) {
       const extraToday = record.payments.some((payment) => payment.kind === 'extra' && payment.amountCents > 0);
       const paidOffToday = state.debts.some((debt) => debt.paidOffDate === date);
-      const weekTick = (dayIndex - ctx.startDayIndex) % 7 === 0;
+      const weekTick = (dayIndex - ctx.todayDayIndex) % 7 === 0;
       if ((weekTick || extraToday || paidOffToday || date === debtFreeDate)
           && seriesDates[seriesDates.length - 1] !== date) {
         seriesDates.push(date);
@@ -579,11 +886,12 @@ function run(ctx, startingCashCents, allowExtra, collectFrom, collectTo) {
       }
     }
 
-    // --- alerts worth a banner, over the whole horizon ------------------
-    collectAlerts(alerts, record, state, ctx);
+    // --- alerts worth a banner, from today through the horizon ----------
+    if (onOrAfterToday) collectAlerts(alerts, record, state, ctx);
 
-    // Stop once there is nothing left to model and the calendar has its data.
-    if (totalOutstandingCents(state) <= 0 && dayIndex >= collectToIndex) break;
+    // Stop once every debt is clear and the calendar has a month past payoff.
+    // Never stop in history: debt is still the current snapshot there.
+    if (onOrAfterToday && totalOutstandingCents(state) <= 0 && dayIndex >= detailEndIndex) break;
   }
 
   return {
@@ -609,6 +917,7 @@ function run(ctx, startingCashCents, allowExtra, collectFrom, collectTo) {
     endCashCents: state.cashCents,
     summary: {
       startingCashCents,
+      cashOnHandCents: sawToday ? cashOnHandCents : startingCashCents,
       totalInterestCents,
       totalPaidCents,
       totalCardSpendCents,
@@ -681,12 +990,20 @@ function serializeDay(record, state, ctx) {
       ...record.gains.map((gain) => ({
         kind: 'gain',
         name: gain.name,
-        amount: toDollars(gain.amountCents)
+        amount: toDollars(gain.amountCents),
+        plannedAmount: toDollars(gain.plannedCents ?? gain.amountCents),
+        itemKey: gain.itemKey,
+        review: gain.review || null,
+        reviewable: true
       })),
       ...record.charges.map((charge) => ({
         kind: 'charge',
         name: charge.name,
         amount: toDollars(charge.amountCents),
+        plannedAmount: toDollars(charge.plannedCents ?? charge.amountCents),
+        itemKey: charge.itemKey,
+        review: charge.review || null,
+        reviewable: true,
         method: charge.method,
         debtId: charge.debtId,
         debtName: charge.debtName,
@@ -699,6 +1016,10 @@ function serializeDay(record, state, ctx) {
         kind: payment.kind === 'extra' ? 'extra_payment' : 'required_payment',
         name: payment.debtName,
         amount: toDollars(payment.amountCents),
+        plannedAmount: toDollars(payment.plannedCents ?? payment.amountCents),
+        itemKey: payment.itemKey,
+        review: payment.review || null,
+        reviewable: true,
         debtId: payment.debtId,
         aprPercent: payment.aprPercent,
         reason: payment.reason
@@ -707,19 +1028,22 @@ function serializeDay(record, state, ctx) {
         kind: 'fee',
         name: `${fee.debtName} annual fee`,
         amount: toDollars(fee.amountCents),
-        debtId: fee.debtId
+        debtId: fee.debtId,
+        reviewable: false
       })),
       ...record.interest.map((entry) => ({
         kind: 'interest',
         name: `${entry.debtName} interest`,
         amount: toDollars(entry.amountCents),
-        debtId: entry.debtId
+        debtId: entry.debtId,
+        reviewable: false
       })),
       ...record.backInterest.map((entry) => ({
         kind: 'back_interest',
         name: `${entry.debtName} deferred interest charged`,
         amount: toDollars(entry.amountCents),
-        debtId: entry.debtId
+        debtId: entry.debtId,
+        reviewable: false
       }))
     ]
   };
@@ -849,73 +1173,85 @@ function formatDollars(cents) {
  * @param {string}  input.today          'YYYY-MM-DD' in the user's own timezone
  * @param {number}  input.cashFloor      dollars the plan tries to stay above
  * @param {string}  input.strategy       'optimized' | 'snowball'
- * @param {number}  input.horizonMonths  how far to project (1-60)
+ * @param {number} [input.horizonMonths] walk cap in months (default 60). The
+ *                                       visible plan stops at payoff + 1 month.
  * @param {Array}   input.debts          debt rows, each with a `promos` array
  * @param {Array}   input.events         gain/charge rows
+ * @param {Array}  [input.actuals]       confirmed / skipped / modified day items
  * @param {string} [input.windowFrom]    first day of full detail
  * @param {string} [input.windowTo]      last day of full detail
  */
 function project(input) {
   const today = input.today;
-  const horizonMonths = Math.min(Math.max(Number(input.horizonMonths) || DEFAULT_HORIZON_MONTHS, 1), 60);
+  const horizonCap = Math.min(Math.max(Number(input.horizonMonths) || DEFAULT_HORIZON_MONTHS, 1), 60);
   const cashFloorCents = toCents(input.cashFloor);
   const strategy = input.strategy === 'snowball' ? 'snowball' : 'optimized';
 
-  const endDate = dates.addMonths(today, horizonMonths);
+  const endDate = dates.addMonths(today, horizonCap);
+  const startDate = earliestPlanDate(input.events || [], input.debts || [], today);
 
   // Default detail window: the calendar month around today, plus a month either
   // side so paging is instant.
   const windowFrom = input.windowFrom || dates.startOfMonth(dates.addMonths(today, -1));
   const windowTo = input.windowTo || dates.endOfMonth(dates.addMonths(today, 1));
 
-  // The initial deposit is the answer to "how much cash do I have right now",
-  // so once its date has passed it is the opening balance rather than a future
-  // gain. Dated ahead, it stays an ordinary one-time gain.
-  const initial = input.events.find((event) => event.isInitialDeposit);
-  const initialIsHistory = initial && dates.toDayIndex(initial.startDate) <= dates.toDayIndex(today);
-  const startingCashCents = initialIsHistory ? toCents(initial.amount) : 0;
-
-  const activeEvents = input.events.filter((event) => !(initialIsHistory && event.isInitialDeposit));
-
-  // Index through the horizon (and one extra day) so surplus probes and the
-  // main walk see the same gains and charges.
-  const occurrences = buildOccurrenceMap(activeEvents, today, dates.addDays(endDate, 1));
+  // Index from the earliest dated event through the horizon (and one extra
+  // day) so a gain last week still funds today, and surplus probes see the
+  // same future gains and charges as the main walk.
+  const collectThrough = dates.addDays(endDate, 1);
+  const occurrences = buildOccurrenceMap(input.events || [], startDate, collectThrough);
+  const debtDueIdsByDate = buildDebtDueMap(input.debts || [], startDate, collectThrough);
 
   // Extra payments are decided on paydays, when money has just landed, plus
-  // day one so existing cash is put to work immediately.
+  // today so leftover cash is put to work immediately. Past paydays stay in
+  // the set so recent history can show a proposed extra to confirm or skip.
   const decisionDays = new Set([today]);
   for (const [date, list] of occurrences) {
-    if (list.some((event) => event.direction === 'gain')) decisionDays.add(date);
+    if (list.some((event) => event.direction === 'gain')) {
+      decisionDays.add(date);
+    }
   }
 
   const ctx = {
     today,
     endDate,
-    startDayIndex: dates.toDayIndex(today),
+    startDayIndex: dates.toDayIndex(startDate),
+    todayDayIndex: dates.toDayIndex(today),
     endDayIndex: dates.toDayIndex(endDate),
     cashFloorCents,
     strategy,
     debts: input.debts,
     occurrences,
-    decisionDays
+    debtDueIdsByDate,
+    decisionDays,
+    actuals: buildActualsMap(input.actuals),
+    continuePastPayoff: !!input.continuePastPayoff
   };
 
-  const plan = run(ctx, startingCashCents, true, windowFrom, windowTo);
+  const plan = run(ctx, 0, true, windowFrom, windowTo);
 
   // Minimums-only baseline, for "here is what the plan is worth".
-  const baseline = run(ctx, startingCashCents, false, today, today);
+  const baseline = run(ctx, 0, false, today, today);
 
   const totalDebtCents = input.debts.reduce((sum, debt) => sum + toCents(debt.balance), 0);
+  const lastCollected = plan.days.length > 0 ? plan.days[plan.days.length - 1].date : windowTo;
+  const projectedThrough = plan.summary.debtFreeDate
+    ? dates.endOfMonth(dates.addMonths(plan.summary.debtFreeDate, 1))
+    : lastCollected;
+  const horizonMonths = Math.max(
+    1,
+    Math.round(dates.daysBetween(today, projectedThrough > lastCollected ? projectedThrough : lastCollected) / 30.44)
+  );
 
   return {
     today,
-    window: { from: windowFrom, to: windowTo },
+    window: { from: windowFrom, to: lastCollected },
     horizonMonths,
     cashFloor: toDollars(cashFloorCents),
     strategy,
     assumption: 'Interest is compounded monthly and charged on each due date.',
     summary: {
-      cashOnHand: toDollars(startingCashCents),
+      cashOnHand: toDollars(plan.summary.cashOnHandCents),
       totalDebt: toDollars(totalDebtCents),
       debtFreeDate: plan.summary.debtFreeDate,
       monthsToDebtFree: plan.summary.debtFreeDate

@@ -33,7 +33,7 @@ export default function PlanPage() {
   }
   if (!plan) return null;
 
-  const hasPlan = plan.debts.length > 0 || plan.events.length > 0 || !!plan.initialDeposit;
+  const hasPlan = plan.debts.length > 0 || plan.events.length > 0;
   if (!hasPlan) return <EmptyPlan />;
 
   const { actions, summary, debts, strategy, nearTermDays, today } = plan.projection;
@@ -64,7 +64,7 @@ export default function PlanPage() {
 
       <SectionCard
         title="What the plan is worth"
-        description={`Compared with paying only the minimums, over the same ${monthsLabel(plan.projection.horizonMonths)}.`}
+        description="Compared with paying only the minimums, through the day the last debt clears."
       >
         <div className="grid gap-2 sm:grid-cols-3">
           <Compare

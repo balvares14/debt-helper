@@ -7,12 +7,12 @@
  * calendar are not a cosmetic problem.
  */
 
-const MONTH_NAMES = [
+export const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
 
-const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+export const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export const WEEKDAY_INITIALS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -159,6 +159,38 @@ export const CADENCE_LABELS: Record<string, string> = {
   monthly: "Monthly",
   yearly: "Yearly",
 };
+
+/** "Monthly on day 1, from Oct 14, 2026" */
+export function cadenceDetail(item: {
+  cadence: string;
+  startDate: string;
+  dueDate?: string | null;
+  endDate?: string | null;
+}): string {
+  const due = item.dueDate || item.startDate;
+  const from = mediumDate(item.startDate);
+  const until = item.endDate ? ` until ${mediumDate(item.endDate)}` : "";
+
+  if (item.cadence === "one_time") return `On ${mediumDate(due)}`;
+
+  if (item.cadence === "weekly" || item.cadence === "biweekly") {
+    return `${CADENCE_LABELS[item.cadence]} on ${WEEKDAY_NAMES[weekdayOf(due)]}, from ${from}${until}`;
+  }
+
+  if (item.cadence === "yearly") {
+    const { month, day } = parseISO(due);
+    return `Yearly on ${MONTH_NAMES[month - 1]} ${day}, from ${from}${until}`;
+  }
+
+  if (item.cadence === "monthly" || item.cadence === "semimonthly") {
+    const day = parseISO(due).day;
+    const hit =
+      item.cadence === "semimonthly" ? `days ${day} and ${Math.min(day + 15, 28)}` : `day ${day}`;
+    return `${CADENCE_LABELS[item.cadence]} on ${hit}, from ${from}${until}`;
+  }
+
+  return `${CADENCE_LABELS[item.cadence] ?? item.cadence} from ${from}${until}`;
+}
 
 export const PROMO_LABELS: Record<string, string> = {
   purchase: "New purchases",

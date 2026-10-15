@@ -1,5 +1,5 @@
 /**
- * The plan: settings, starting cash, and the projection itself.
+ * The plan: settings and the projection itself.
  *
  * Everything here is scoped to req.user.userId, so a debt row is only ever
  * visible to the person who entered it.
@@ -58,6 +58,51 @@ router.put(
 
     await repository.setInitialDeposit(req.user.userId, parsed.value);
     await respondWithPlan(req, res, 'Starting cash saved');
+  })
+);
+
+/**
+ * Confirm, skip, or change what happened on a day on or before today.
+ * PUT /api/plan/actuals  { date, itemKey, status, amount?, plannedAmount?, debtId?, method? }
+ */
+router.put(
+  '/actuals',
+  handle('save that review', async (req, res) => {
+    const parsed = validation.validateActual(req.body);
+    if (!parsed.ok) return fail(res, 400, 'Check this review.', parsed.errors);
+
+    const today = dates.isValidISODate(req.query.today)
+      ? req.query.today
+      : dates.isValidISODate(req.body.today)
+        ? req.body.today
+        : dates.todayISO();
+    if (parsed.value.date > today) {
+      return fail(res, 400, 'Future days cannot be marked as already done.');
+    }
+
+    await repository.upsertActual(req.user.userId, parsed.value);
+    const verb = parsed.value.status === 'skipped'
+      ? 'skipped'
+      : parsed.value.status === 'modified'
+        ? 'updated'
+        : 'confirmed';
+    await respondWithPlan(req, res, `Day updated — ${verb}`);
+  })
+);
+
+/**
+ * Clear a review so the plan treats that item as unconfirmed again.
+ * DELETE /api/plan/actuals?date=&itemKey=
+ */
+router.delete(
+  '/actuals',
+  handle('clear that review', async (req, res) => {
+    const date = dates.isValidISODate(req.query.date) ? req.query.date : null;
+    const itemKey = typeof req.query.itemKey === 'string' ? req.query.itemKey.trim() : '';
+    if (!date || !itemKey) return fail(res, 400, 'Needs the date and item to clear.');
+
+    await repository.deleteActual(req.user.userId, date, itemKey);
+    await respondWithPlan(req, res, 'Review cleared');
   })
 );
 

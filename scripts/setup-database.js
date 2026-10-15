@@ -24,7 +24,7 @@ const SQL_FILES = [
   { file: 'database-setup-template.sql', required: false }
 ];
 
-const PLANNER_TABLES = ['users', 'plan_settings', 'debts', 'debt_promos', 'cash_events'];
+const PLANNER_TABLES = ['users', 'plan_settings', 'debts', 'debt_promos', 'cash_events', 'day_actuals'];
 const TEMPLATE_TABLES = ['permissions', 'miscellaneous'];
 
 async function runSqlFile(client, filename, required) {

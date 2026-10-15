@@ -2,28 +2,33 @@
  * The default view: a month of days, each showing what you are left with.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
+import { Plus } from "lucide-react";
 
+import AddItemModal from "@/components/plan/AddItemModal";
 import DayDetail from "@/components/plan/DayDetail";
 import MonthCalendar from "@/components/plan/MonthCalendar";
 import { PlanBanners, PlanStatus } from "@/components/plan/PlanStatus";
 import EmptyPlan from "@/components/plan/EmptyPlan";
 import { usePlan } from "@/contexts/PlanContext";
-import { monthKeyOf, monthLabel, startOfMonthISO } from "@/lib/format";
+import { addMonthsISO, longDate, monthKeyOf, monthLabel, startOfMonthISO } from "@/lib/format";
 
 export default function CalendarPage() {
   const { plan, loading, error, today, visibleMonth, goToMonth, shiftMonth, dayFor } = usePlan();
   const [selectedDate, setSelectedDate] = useState(today);
+  const [adding, setAdding] = useState(false);
 
-  // Keep the selection inside the month on screen, so the panel never
-  // describes a day the user cannot see.
-  useEffect(() => {
-    if (monthKeyOf(selectedDate) === monthKeyOf(visibleMonth)) return;
-    setSelectedDate(
-      monthKeyOf(today) === monthKeyOf(visibleMonth) ? today : startOfMonthISO(visibleMonth),
-    );
-  }, [visibleMonth, today, selectedDate]);
+  const selectDate = (date: string) => {
+    setSelectedDate(date);
+    if (monthKeyOf(date) !== monthKeyOf(visibleMonth)) goToMonth(date);
+  };
+
+  const onShiftMonth = (delta: number) => {
+    const next = addMonthsISO(visibleMonth, 1 * delta);
+    shiftMonth(delta);
+    setSelectedDate(monthKeyOf(today) === monthKeyOf(next) ? today : startOfMonthISO(next));
+  };
 
   if (loading) {
     return (
@@ -45,7 +50,7 @@ export default function CalendarPage() {
 
   if (!plan) return null;
 
-  const hasPlan = plan.debts.length > 0 || plan.events.length > 0 || !!plan.initialDeposit;
+  const hasPlan = plan.debts.length > 0 || plan.events.length > 0;
   if (!hasPlan) return <EmptyPlan />;
 
   return (
@@ -55,13 +60,13 @@ export default function CalendarPage() {
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1">
-          <NavButton onClick={() => shiftMonth(-1)} label="Previous month">
+          <NavButton onClick={() => onShiftMonth(-1)} label="Previous month">
             ‹
           </NavButton>
           <h1 className="min-w-[10rem] text-center text-[0.9375rem] font-semibold text-ink">
             {monthLabel(visibleMonth)}
           </h1>
-          <NavButton onClick={() => shiftMonth(1)} label="Next month">
+          <NavButton onClick={() => onShiftMonth(1)} label="Next month">
             ›
           </NavButton>
           <button
@@ -84,22 +89,31 @@ export default function CalendarPage() {
           month={visibleMonth}
           today={today}
           selectedDate={selectedDate}
-          onSelectDate={setSelectedDate}
+          onSelectDate={selectDate}
           dayFor={dayFor}
           cashFloor={plan.projection.cashFloor}
         />
 
         <div className="flex flex-col gap-3">
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="inline-flex items-center justify-center gap-1.5 rounded-card border border-line bg-surface-1 px-3 py-2 text-xs font-medium text-ink hover:bg-surface-2"
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
+            Add to {longDate(selectedDate)}
+          </button>
           <DayDetail
             date={selectedDate}
             day={dayFor(selectedDate)}
             cashFloor={plan.projection.cashFloor}
             isToday={selectedDate === today}
           />
+          <AddItemModal open={adding} date={selectedDate} onClose={() => setAdding(false)} />
           <p className="px-1 text-[0.6875rem] leading-relaxed text-ink-faint">
             Each day shows the cash you are left with after that day's money in, spending and
-            payments. Extra payoff is only scheduled from cash that stays clear of your floor
-            through the rest of the plan.{" "}
+            payments. On today and earlier days, confirm, skip, or change an amount so the next
+            extras use what actually happened.{" "}
             <Link to="/plan" className="text-brand underline">
               See the full payment plan
             </Link>

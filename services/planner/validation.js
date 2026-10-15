@@ -16,6 +16,7 @@ const CADENCES = ['one_time', 'weekly', 'biweekly', 'semimonthly', 'monthly', 'y
 const PAYMENT_METHODS = ['cash', 'card', 'optimizer'];
 const STRATEGIES = ['optimized', 'snowball'];
 const STATUSES = ['active', 'draft'];
+const ACTUAL_STATUSES = ['confirmed', 'skipped', 'modified'];
 
 const MAX_PROMOS_PER_DEBT = 2;
 
@@ -58,6 +59,27 @@ function asStatus(value, fallback = 'active') {
 // Debts
 // ---------------------------------------------------------------------------
 
+function readSchedule(body, add, { defaultCadence }) {
+  const startDate = isValidISODate(body.startDate) ? body.startDate : null;
+  if (!startDate) add('startDate', 'Needs a valid start date (when this becomes active).');
+
+  const cadence = CADENCES.includes(body.cadence) ? body.cadence : defaultCadence;
+
+  let dueDate = isValidISODate(body.dueDate) ? body.dueDate : null;
+  if (!dueDate && startDate) dueDate = startDate;
+  if (!dueDate) add('dueDate', 'Needs a valid due date (when this hits).');
+
+  let endDate = body.endDate ? (isValidISODate(body.endDate) ? body.endDate : null) : null;
+  if (body.endDate && !endDate) {
+    add('endDate', 'End date must be a valid date (YYYY-MM-DD).');
+  } else if (endDate && startDate && endDate < startDate) {
+    add('endDate', 'End date cannot be before the start date.');
+  }
+  if (cadence === 'one_time') endDate = null;
+
+  return { startDate, cadence, dueDate, endDate };
+}
+
 function validateDebt(body) {
   const errors = [];
   const add = (field, message) => errors.push({ field, message });
@@ -74,10 +96,7 @@ function validateDebt(body) {
   const apr = asRate(body.apr);
   if (apr === null || apr < 0 || apr > 100) add('apr', 'APR must be between 0 and 100.');
 
-  const dueDay = asNumber(body.dueDay);
-  if (dueDay === null || !Number.isInteger(dueDay) || dueDay < 1 || dueDay > 28) {
-    add('dueDay', 'Due day must be a whole number from 1 to 28, so it exists in February too.');
-  }
+  const schedule = readSchedule(body, add, { defaultCadence: 'monthly' });
 
   // Installment loans keep a contract payment; revolving lines get an estimate
   // recomputed each cycle, so the user is not retyping the issuer minimum.
@@ -141,7 +160,10 @@ function validateDebt(body) {
       debtType,
       balance,
       apr,
-      dueDay,
+      startDate: schedule.startDate,
+      cadence: schedule.cadence,
+      dueDate: schedule.dueDate,
+      endDate: schedule.endDate,
       paymentKind,
       fixedPayment: paymentKind === 'fixed' ? fixedPayment : null,
       overrideMin: paymentKind === 'override_min' ? overrideMin : null,
@@ -235,18 +257,7 @@ function validateEvent(body, debts) {
   const direction = DIRECTIONS.includes(body.direction) ? body.direction : null;
   if (!direction) add('direction', 'Direction must be gain or charge.');
 
-  const startDate = isValidISODate(body.startDate) ? body.startDate : null;
-  if (!startDate) add('startDate', 'Needs a valid date (YYYY-MM-DD).');
-
-  const cadence = CADENCES.includes(body.cadence) ? body.cadence : 'one_time';
-
-  let endDate = body.endDate ? (isValidISODate(body.endDate) ? body.endDate : null) : null;
-  if (body.endDate && !endDate) {
-    add('endDate', 'End date must be a valid date (YYYY-MM-DD).');
-  } else if (endDate && startDate && endDate < startDate) {
-    add('endDate', 'End date cannot be before the start date.');
-  }
-  if (cadence === 'one_time') endDate = null;
+  const schedule = readSchedule(body, add, { defaultCadence: 'one_time' });
 
   let canPutOnCard = asBoolean(body.canPutOnCard, false);
   let paymentMethod = PAYMENT_METHODS.includes(body.paymentMethod) ? body.paymentMethod : 'cash';
@@ -290,9 +301,10 @@ function validateEvent(body, debts) {
       name,
       amount,
       direction,
-      startDate,
-      cadence,
-      endDate,
+      startDate: schedule.startDate,
+      cadence: schedule.cadence,
+      dueDate: schedule.dueDate,
+      endDate: schedule.endDate,
       canPutOnCard,
       paymentMethod,
       paymentDebtId,
@@ -337,6 +349,49 @@ function validateSettings(body) {
   return { ok: true, value: patch };
 }
 
+function validateActual(body) {
+  const errors = [];
+  const add = (field, message) => errors.push({ field, message });
+
+  const date = isValidISODate(body.date) ? body.date : null;
+  if (!date) add('date', 'Needs the date this happened on.');
+
+  const itemKey = asText(body.itemKey, 80);
+  if (!itemKey) add('itemKey', 'Needs which item this review is for.');
+
+  const status = ACTUAL_STATUSES.includes(body.status) ? body.status : null;
+  if (!status) add('status', 'Mark it as confirmed, skipped, or modified.');
+
+  let amount = null;
+  if (body.amount !== null && body.amount !== undefined && body.amount !== '') {
+    amount = asMoney(body.amount);
+    if (amount === null || amount < 0) add('amount', 'Amount has to be $0 or more.');
+  }
+  if (status === 'modified' && (amount === null || amount === undefined)) {
+    add('amount', 'A changed amount needs the number you actually paid or received.');
+  }
+
+  const plannedAmount = body.plannedAmount === null || body.plannedAmount === undefined || body.plannedAmount === ''
+    ? null
+    : asMoney(body.plannedAmount);
+
+  let debtId = body.debtId === null || body.debtId === undefined || body.debtId === ''
+    ? null
+    : Number(body.debtId);
+  if (debtId !== null && (!Number.isInteger(debtId) || debtId <= 0)) {
+    add('debtId', 'Debt id is not valid.');
+    debtId = null;
+  }
+
+  const method = body.method === 'cash' || body.method === 'card' ? body.method : null;
+
+  if (errors.length > 0) return { ok: false, errors };
+  return {
+    ok: true,
+    value: { date, itemKey, status, amount, plannedAmount, debtId, method }
+  };
+}
+
 function validateInitialDeposit(body) {
   const errors = [];
 
@@ -371,5 +426,6 @@ module.exports = {
   validateDebt,
   validateEvent,
   validateSettings,
-  validateInitialDeposit
+  validateInitialDeposit,
+  validateActual
 };

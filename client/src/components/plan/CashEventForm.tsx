@@ -10,7 +10,7 @@ import { useMemo, useState, type FormEvent } from "react";
 
 import { Checkbox, Field, FormActions, NumberInput, Select, TextInput } from "./fields";
 import { fieldError, usePlan } from "@/contexts/PlanContext";
-import { CADENCE_LABELS } from "@/lib/format";
+import { ScheduleFields } from "./ScheduleFields";
 import {
   createCashEvent,
   updateCashEvent,
@@ -28,6 +28,7 @@ interface Draft {
   direction: Direction;
   startDate: string;
   cadence: Cadence;
+  dueDate: string;
   endDate: string;
   canPutOnCard: boolean;
   paymentMethod: PaymentMethod;
@@ -42,6 +43,7 @@ const emptyDraft = (direction: Direction, today: string): Draft => ({
   direction,
   startDate: today,
   cadence: direction === "gain" ? "biweekly" : "monthly",
+  dueDate: today,
   endDate: "",
   canPutOnCard: false,
   paymentMethod: "cash",
@@ -56,6 +58,7 @@ const toDraft = (event: CashEvent): Draft => ({
   direction: event.direction,
   startDate: event.startDate,
   cadence: event.cadence,
+  dueDate: event.dueDate ?? event.startDate,
   endDate: event.endDate ?? "",
   canPutOnCard: event.canPutOnCard,
   paymentMethod: event.paymentMethod,
@@ -69,12 +72,22 @@ export interface CashEventFormProps {
   /** Which kind to create when adding. Ignored when editing. */
   direction?: Direction;
   onDone: () => void;
+  /** Seed a new event on this day (ignored when editing). */
+  initialDate?: string;
+  /** Drop the card chrome when the form already sits in a panel. */
+  plain?: boolean;
 }
 
-export default function CashEventForm({ event, direction = "charge", onDone }: CashEventFormProps) {
+export default function CashEventForm({
+  event,
+  direction = "charge",
+  onDone,
+  initialDate,
+  plain = false,
+}: CashEventFormProps) {
   const { plan, save, saving, fieldErrors, error, today } = usePlan();
   const [draft, setDraft] = useState<Draft>(() =>
-    event ? toDraft(event) : emptyDraft(direction, today),
+    event ? toDraft(event) : emptyDraft(direction, initialDate || today),
   );
 
   const cards = useMemo(
@@ -100,6 +113,7 @@ export default function CashEventForm({ event, direction = "charge", onDone }: C
       direction: draft.direction,
       startDate: draft.startDate,
       cadence: draft.cadence,
+      dueDate: draft.dueDate,
       endDate: draft.cadence === "one_time" || !draft.endDate ? null : draft.endDate,
       canPutOnCard: isCharge && draft.canPutOnCard,
       paymentMethod: isCharge ? draft.paymentMethod : "cash",
@@ -123,14 +137,18 @@ export default function CashEventForm({ event, direction = "charge", onDone }: C
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-3 rounded-card border border-line bg-surface-2 p-3"
+      className={
+        plain
+          ? "flex flex-col gap-3"
+          : "flex flex-col gap-3 rounded-card border border-line bg-surface-2 p-3"
+      }
     >
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Name" error={err("name")}>
           <TextInput
             value={draft.name}
             onChange={(e) => set("name", e.target.value)}
-            placeholder={isCharge ? "Rent" : "Paycheck"}
+            placeholder={isCharge ? "Rent" : "Paycheck or Initial cash"}
             invalid={!!err("name")}
             autoFocus
           />
@@ -183,39 +201,11 @@ export default function CashEventForm({ event, direction = "charge", onDone }: C
           </Select>
         </Field>
 
-        <Field label="Repeats" error={err("cadence")}>
-          <Select value={draft.cadence} onChange={(e) => set("cadence", e.target.value as Cadence)}>
-            {Object.entries(CADENCE_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </Select>
-        </Field>
-
-        <Field
-          label={draft.cadence === "one_time" ? "Date" : "First date"}
-          hint={draft.cadence === "one_time" ? undefined : "The pattern is anchored to this day."}
-          error={err("startDate")}
-        >
-          <TextInput
-            type="date"
-            value={draft.startDate}
-            onChange={(e) => set("startDate", e.target.value)}
-            invalid={!!err("startDate")}
-          />
-        </Field>
-
-        {draft.cadence !== "one_time" && (
-          <Field label="Stops after" hint="Optional." error={err("endDate")}>
-            <TextInput
-              type="date"
-              value={draft.endDate}
-              onChange={(e) => set("endDate", e.target.value)}
-              invalid={!!err("endDate")}
-            />
-          </Field>
-        )}
+        <ScheduleFields
+          draft={draft}
+          set={(key, value) => set(key, value as never)}
+          err={err}
+        />
       </div>
 
       {isCharge && (

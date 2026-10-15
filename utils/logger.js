@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const winston = require('winston');
 
 // Define log levels
@@ -42,26 +44,35 @@ const fileFormat = winston.format.combine(
   winston.format.json()
 );
 
-// Define transports
+// Define transports. Vercel functions can only write under /tmp, so file logs
+// stay on the local server. A failed mkdir used to crash every API route.
 const transports = [
-  // Console transport
   new winston.transports.Console({
     format: consoleFormat,
   }),
-  
-  // Error log file
-  new winston.transports.File({
-    filename: 'logs/error.log',
-    level: 'error',
-    format: fileFormat,
-  }),
-  
-  // Combined log file
-  new winston.transports.File({
-    filename: 'logs/combined.log',
-    format: fileFormat,
-  }),
 ];
+
+if (!process.env.VERCEL) {
+  const logsDir = path.join(__dirname, '..', 'logs');
+  try {
+    if (!fs.existsSync(logsDir)) {
+      fs.mkdirSync(logsDir, { recursive: true });
+    }
+    transports.push(
+      new winston.transports.File({
+        filename: path.join(logsDir, 'error.log'),
+        level: 'error',
+        format: fileFormat,
+      }),
+      new winston.transports.File({
+        filename: path.join(logsDir, 'combined.log'),
+        format: fileFormat,
+      }),
+    );
+  } catch (error) {
+    console.error('File logging disabled:', error.message);
+  }
+}
 
 // Create the logger
 const logger = winston.createLogger({
@@ -69,15 +80,6 @@ const logger = winston.createLogger({
   levels,
   transports,
 });
-
-// Create logs directory if it doesn't exist
-const fs = require('fs');
-const path = require('path');
-
-const logsDir = path.join(__dirname, '..', 'logs');
-if (!fs.existsSync(logsDir)) {
-  fs.mkdirSync(logsDir, { recursive: true });
-}
 
 // Add request logging middleware
 logger.requestLogger = (req, res, next) => {

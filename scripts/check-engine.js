@@ -24,7 +24,7 @@ function check(label, passed, detail) {
 }
 
 /** Demo data is shaped for the repository; the engine wants one flat event
- *  list with the opening balance as a flagged one-time gain. */
+ *  list. Opening cash is just a dated one-time gain. */
 function toEngineInput(demo, today, overrides = {}) {
   const debts = demo.debts.map((debt, index) => ({
     ...debt,
@@ -51,15 +51,13 @@ function toEngineInput(demo, today, overrides = {}) {
       canPutOnCard: false,
       paymentMethod: 'cash',
       paymentDebtId: null,
-      locked: false,
-      isInitialDeposit: true
+      locked: false
     },
     ...demo.events.map((event, index) => ({
       id: 200 + index,
       endDate: null,
       paymentDebtId: null,
       locked: false,
-      isInitialDeposit: false,
       ...event
     }))
   ];
@@ -174,7 +172,7 @@ check(
 
 const extraPayments = result.days.flatMap((day) =>
   day.items
-    .filter((item) => item.kind === 'extra_payment')
+    .filter((item) => item.kind === 'extra_payment' && item.amount > 0)
     .map((item) => ({ date: day.date, endCash: day.endCash, ...item }))
 );
 
@@ -346,6 +344,170 @@ check(
   broke.days.every((day) => !day.items.some((item) => item.kind === 'extra_payment' && day.endCash < 0))
 );
 
+console.log('\nEvent start vs hit day');
+
+const monthlyHits = dates.occurrencesBetween(
+  { startDate: '2026-10-14', cadence: 'monthly', dueDate: '2026-01-01' },
+  '2026-10-01',
+  '2026-12-31'
+);
+check(
+  'a monthly gain starting mid-month hits the next 1st, not the 1st already passed',
+  monthlyHits[0] === '2026-11-01' && !monthlyHits.includes('2026-10-01'),
+  monthlyHits.join(', ')
+);
+
+const weeklyHits = dates.occurrencesBetween(
+  { startDate: '2026-10-14', cadence: 'weekly', dueDate: '2026-10-19' },
+  '2026-10-14',
+  '2026-11-02'
+);
+check(
+  'a weekly charge starting Wednesday hits the next Monday, not before the start',
+  weeklyHits[0] === '2026-10-19' && !weeklyHits.includes('2026-10-12'),
+  weeklyHits.join(', ')
+);
+
+const fromDue = dates.occurrencesBetween(
+  { startDate: '2026-01-01', cadence: 'monthly', dueDate: '2026-11-01' },
+  '2026-01-01',
+  '2026-12-31'
+);
+check(
+  'monthly copies start at the due date, not earlier months after the start date',
+  fromDue[0] === '2026-11-01' && !fromDue.includes('2026-10-01'),
+  fromDue.join(', ')
+);
+
+// A gain dated before today must still be cash on hand. There is no separate
+// "cash on hand" deposit — leftover is just the ledger.
+console.log('\nHistory cash');
+
+const historyToday = '2026-10-14';
+const history = engine.project({
+  today: historyToday,
+  cashFloor: 0,
+  strategy: 'optimized',
+  horizonMonths: 2,
+  windowFrom: '2026-10-13',
+  windowTo: '2026-10-20',
+  debts: [],
+  events: [
+    {
+      id: 1,
+      name: 'Initial cash',
+      amount: 1900,
+      direction: 'gain',
+      startDate: '2026-10-13',
+      cadence: 'one_time',
+      paymentMethod: 'cash',
+      canPutOnCard: false,
+      paymentDebtId: null,
+      locked: false
+    }
+  ]
+});
+
+check(
+  'a gain yesterday is still cash on hand when nothing is dated today',
+  history.summary.cashOnHand === 1900,
+  `cash on hand ${history.summary.cashOnHand}`
+);
+
+const oct14 = history.days.find((day) => day.date === historyToday);
+check(
+  'today opens with that leftover, not 0',
+  oct14 ? oct14.startCash === 1900 && oct14.endCash === 1900 : false,
+  oct14 ? `start ${oct14.startCash}, end ${oct14.endCash}` : 'today missing'
+);
+
+const emptyToday = engine.project({
+  today: historyToday,
+  cashFloor: 0,
+  strategy: 'optimized',
+  horizonMonths: 1,
+  windowFrom: historyToday,
+  windowTo: historyToday,
+  debts: [],
+  events: []
+});
+check(
+  'with no dated gains at all, cash on hand is 0',
+  emptyToday.summary.cashOnHand === 0,
+  `cash on hand ${emptyToday.summary.cashOnHand}`
+);
+
+console.log('\nDebt start date');
+
+const futureStart = engine.project({
+  today: '2026-10-14',
+  cashFloor: 0,
+  strategy: 'optimized',
+  horizonMonths: 3,
+  windowFrom: '2026-10-14',
+  windowTo: '2026-12-31',
+  debts: [
+    {
+      id: 1,
+      name: 'New loan',
+      debtType: 'loan',
+      balance: 3000,
+      apr: 9,
+      startDate: '2026-11-20',
+      dueDay: 12,
+      paymentKind: 'fixed',
+      fixedPayment: 150,
+      acceptsNewCharges: false,
+      creditLimit: null,
+      carryingBalance: true,
+      annualFee: 0,
+      promos: []
+    }
+  ],
+  events: [
+    {
+      id: 1,
+      name: 'Initial cash',
+      amount: 2000,
+      direction: 'gain',
+      startDate: '2026-10-13',
+      cadence: 'one_time',
+      paymentMethod: 'cash',
+      canPutOnCard: false,
+      paymentDebtId: null,
+      locked: false
+    }
+  ]
+});
+
+const requiredOn = (date) => {
+  const day = futureStart.days.find((entry) => entry.date === date);
+  return day
+    ? day.items.filter((item) => item.kind === 'required_payment' && item.name === 'New loan')
+    : [];
+};
+
+check(
+  'a debt does not take a required payment before its start date',
+  requiredOn('2026-11-12').length === 0,
+  requiredOn('2026-11-12').length > 0 ? 'Nov 12 fired too early' : 'Nov 12 skipped'
+);
+check(
+  'the first due is the first due day on or after the start date',
+  requiredOn('2026-12-12').length === 1 && requiredOn('2026-12-12')[0].amount === 150,
+  requiredOn('2026-12-12')[0]
+    ? `Dec 12 paid ${requiredOn('2026-12-12')[0].amount}`
+    : 'Dec 12 missing'
+);
+check(
+  'extra payoff does not target a debt before it starts',
+  !futureStart.days.some(
+    (day) =>
+      day.date < '2026-11-20' &&
+      day.items.some((item) => item.kind === 'extra_payment' && item.name === 'New loan')
+  )
+);
+
 // Extra after this month's due date used to look only 45 days ahead, so a
 // cash bill ~46 days later was spent as surplus. The probe now walks the
 // whole plan horizon.
@@ -382,7 +544,6 @@ const afterDue = engine.project({
       direction: 'gain',
       startDate: '2026-01-01',
       cadence: 'one_time',
-      isInitialDeposit: true,
       paymentMethod: 'cash',
       canPutOnCard: false,
       paymentDebtId: null,
@@ -395,7 +556,6 @@ const afterDue = engine.project({
       direction: 'charge',
       startDate: '2026-11-01',
       cadence: 'one_time',
-      isInitialDeposit: false,
       paymentMethod: 'cash',
       canPutOnCard: false,
       paymentDebtId: null,
@@ -466,6 +626,211 @@ check(
 check(
   'so no back-interest is ever charged',
   !deferred.banners.some((banner) => banner.title === 'Deferred interest will be charged')
+);
+
+console.log('\nDay reviews');
+
+const reviewToday = '2026-10-14';
+const skippedGain = engine.project({
+  today: reviewToday,
+  cashFloor: 0,
+  strategy: 'optimized',
+  horizonMonths: 2,
+  windowFrom: '2026-10-13',
+  windowTo: reviewToday,
+  debts: [],
+  events: [
+    {
+      id: 1,
+      name: 'Initial cash',
+      amount: 1900,
+      direction: 'gain',
+      startDate: '2026-10-13',
+      cadence: 'one_time',
+      paymentMethod: 'cash',
+      canPutOnCard: false,
+      paymentDebtId: null,
+      locked: false
+    }
+  ],
+  actuals: [{ date: '2026-10-13', itemKey: 'gain:event:1', status: 'skipped' }]
+});
+check(
+  'skipping yesterday\'s gain leaves cash on hand at 0',
+  skippedGain.summary.cashOnHand === 0,
+  `cash on hand ${skippedGain.summary.cashOnHand}`
+);
+
+const reviewDebts = [
+  {
+    id: 1,
+    name: 'High APR',
+    debtType: 'credit_card',
+    balance: 4000,
+    apr: 29.99,
+    startDate: '2026-01-01',
+    cadence: 'monthly',
+    dueDate: '2026-11-01',
+    paymentKind: 'estimated_min',
+    acceptsNewCharges: false,
+    creditLimit: 5000,
+    carryingBalance: true,
+    annualFee: 0,
+    balanceAsOf: reviewToday,
+    promos: []
+  },
+  {
+    id: 2,
+    name: 'Low APR',
+    debtType: 'credit_card',
+    balance: 4000,
+    apr: 9.99,
+    startDate: '2026-01-01',
+    cadence: 'monthly',
+    dueDate: '2026-11-01',
+    paymentKind: 'estimated_min',
+    acceptsNewCharges: false,
+    creditLimit: 5000,
+    carryingBalance: true,
+    annualFee: 0,
+    balanceAsOf: reviewToday,
+    promos: []
+  }
+];
+
+const reviewPayday = {
+  id: 10,
+  name: 'Paycheck',
+  amount: 800,
+  direction: 'gain',
+  startDate: reviewToday,
+  cadence: 'one_time',
+  paymentMethod: 'cash',
+  canPutOnCard: false,
+  paymentDebtId: null,
+  locked: false
+};
+
+const extrasOn = (plan, date, debtId) => {
+  const day = plan.days.find((entry) => entry.date === date);
+  if (!day) return [];
+  return day.items.filter((item) => item.kind === 'extra_payment' && item.debtId === debtId);
+};
+
+const plannedReview = engine.project({
+  today: reviewToday,
+  cashFloor: 0,
+  strategy: 'optimized',
+  horizonMonths: 2,
+  windowFrom: reviewToday,
+  windowTo: reviewToday,
+  debts: reviewDebts,
+  events: [reviewPayday]
+});
+const plannedHigh = extrasOn(plannedReview, reviewToday, 1);
+check(
+  'planned extra goes to the highest-rate debt',
+  plannedHigh.length > 0 && plannedHigh[0].amount > 0,
+  plannedHigh[0] ? `$${plannedHigh[0].amount} to ${plannedHigh[0].name}` : 'none'
+);
+
+const skippedExtra = engine.project({
+  today: reviewToday,
+  cashFloor: 0,
+  strategy: 'optimized',
+  horizonMonths: 2,
+  windowFrom: reviewToday,
+  windowTo: reviewToday,
+  debts: reviewDebts,
+  events: [reviewPayday],
+  actuals: [{ date: reviewToday, itemKey: 'extra_payment:debt:1', status: 'skipped' }]
+});
+const skipDay = skippedExtra.days.find((entry) => entry.date === reviewToday);
+const skipHigh = extrasOn(skippedExtra, reviewToday, 1);
+const skipLow = extrasOn(skippedExtra, reviewToday, 2);
+check(
+  'skipping that extra does not send the leftover to the next debt',
+  (skipHigh.length === 0 || skipHigh[0].amount === 0)
+    && (skipLow.length === 0 || skipLow[0].amount === 0),
+  `high ${skipHigh[0] ? skipHigh[0].amount : 'none'}, low ${skipLow[0] ? skipLow[0].amount : 'none'}`
+);
+check(
+  'and the cash stays available for later days',
+  skipDay ? skipDay.endCash === 800 : false,
+  skipDay ? `end cash ${skipDay.endCash}` : 'today missing'
+);
+
+const modifiedExtra = engine.project({
+  today: reviewToday,
+  cashFloor: 0,
+  strategy: 'optimized',
+  horizonMonths: 2,
+  windowFrom: reviewToday,
+  windowTo: reviewToday,
+  debts: reviewDebts,
+  events: [reviewPayday],
+  actuals: [{
+    date: reviewToday,
+    itemKey: 'extra_payment:debt:1',
+    status: 'modified',
+    amount: 150
+  }]
+});
+const modDay = modifiedExtra.days.find((entry) => entry.date === reviewToday);
+const modHigh = extrasOn(modifiedExtra, reviewToday, 1);
+const modLow = extrasOn(modifiedExtra, reviewToday, 2);
+check(
+  'a modified extra uses the amount you entered',
+  !!modHigh[0] && modHigh[0].amount === 150 && modHigh[0].review === 'modified',
+  modHigh[0] ? `$${modHigh[0].amount} (${modHigh[0].review})` : 'none'
+);
+check(
+  'and does not dump the leftover onto the next debt',
+  modLow.length === 0 || modLow[0].amount === 0,
+  modLow[0] ? `low got ${modLow[0].amount}` : 'low untouched'
+);
+check(
+  'so the next plan starts from the leftover cash',
+  modDay ? modDay.endCash === 650 : false,
+  modDay ? `end cash ${modDay.endCash}` : 'today missing'
+);
+
+const yesterday = '2026-10-13';
+const historyPayday = { ...reviewPayday, id: 11, startDate: yesterday, dueDate: yesterday };
+const historyBase = {
+  today: reviewToday,
+  cashFloor: 0,
+  strategy: 'optimized',
+  horizonMonths: 2,
+  windowFrom: yesterday,
+  windowTo: reviewToday,
+  debts: reviewDebts,
+  events: [historyPayday]
+};
+
+const unconfirmedHistory = engine.project(historyBase);
+check(
+  'an unconfirmed extra yesterday does not spend leftover cash',
+  unconfirmedHistory.summary.cashOnHand === 800,
+  `cash on hand ${unconfirmedHistory.summary.cashOnHand}`
+);
+
+const confirmedHistory = engine.project({
+  ...historyBase,
+  actuals: [{
+    date: yesterday,
+    itemKey: 'extra_payment:debt:1',
+    status: 'confirmed',
+    amount: 300
+  }]
+});
+const confirmedToday = confirmedHistory.days.find((entry) => entry.date === reviewToday);
+check(
+  'confirming that extra spends the cash, and today starts from what is left',
+  confirmedHistory.summary.cashOnHand === 500
+    && confirmedToday
+    && confirmedToday.startCash === 500,
+  `cash on hand ${confirmedHistory.summary.cashOnHand}, today start ${confirmedToday ? confirmedToday.startCash : 'missing'}`
 );
 
 console.log(

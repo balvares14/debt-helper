@@ -11,7 +11,13 @@ const router = express.Router();
 
 const { authenticateToken } = require('../middleware/auth');
 const { fail, handle, respondWithPlan, parseId } = require('../utils/planRoutes');
-const { repository, validation } = require('../services/planner');
+const { repository, validation, dates } = require('../services/planner');
+
+function requestToday(req) {
+  const fromQuery = dates.isValidISODate(req.query.today) ? req.query.today : null;
+  const fromBody = dates.isValidISODate(req.body && req.body.today) ? req.body.today : null;
+  return fromQuery || fromBody || dates.todayISO();
+}
 
 router.use(authenticateToken);
 
@@ -34,6 +40,7 @@ router.post(
     const parsed = validation.validateDebt(req.body);
     if (!parsed.ok) return fail(res, 400, 'Check these fields.', parsed.errors);
 
+    parsed.value.balanceAsOf = parsed.value.balanceAsOf || requestToday(req);
     const debt = await repository.createDebt(req.user.userId, parsed.value);
     if (parsed.promos.length > 0) {
       await repository.replacePromos(req.user.userId, debt.id, parsed.promos);
@@ -53,6 +60,11 @@ router.put(
     const parsed = validation.validateDebt(req.body);
     if (!parsed.ok) return fail(res, 400, 'Check these fields.', parsed.errors);
 
+    const existing = await repository.getDebt(req.user.userId, debtId);
+    if (!existing) return fail(res, 404, 'Debt not found.');
+    const balanceChanged = Number(existing.balance) !== Number(parsed.value.balance);
+    parsed.value.balanceAsOf = parsed.value.balanceAsOf
+      || (balanceChanged ? requestToday(req) : existing.balanceAsOf);
     const debt = await repository.updateDebt(req.user.userId, debtId, parsed.value);
     if (!debt) return fail(res, 404, 'Debt not found.');
 

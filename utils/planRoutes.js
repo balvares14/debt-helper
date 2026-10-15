@@ -39,7 +39,8 @@ async function respondWithPlan(req, res, message) {
   const plan = await buildPlan(req.user.userId, {
     today: req.query.today || body.today,
     from: req.query.from || body.from,
-    to: req.query.to || body.to
+    to: req.query.to || body.to,
+    continuePastPayoff: req.query.continue === '1' || body.continue === true || body.continue === '1'
   });
   return res.json({ success: true, message, data: plan });
 }

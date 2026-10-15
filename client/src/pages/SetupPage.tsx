@@ -1,6 +1,7 @@
 /**
- * Where the plan gets entered: starting cash, settings, debts, and the gains
- * and charges that drive the calendar.
+ * Where the plan gets entered: settings, debts, and the gains and charges
+ * that drive the calendar. Cash on hand is the running ledger of those
+ * dated gains — add a one-time "Initial cash" gain if you are just starting.
  *
  * Every save recalculates the whole projection server-side, so the numbers on
  * the debt rows below are always the live ones.
@@ -11,11 +12,11 @@ import { SquarePen, Trash2 } from "lucide-react";
 
 import CashEventForm from "@/components/plan/CashEventForm";
 import DebtForm from "@/components/plan/DebtForm";
-import { Field, FormActions, NumberInput, SectionCard, Select, TextInput } from "@/components/plan/fields";
+import { Field, FormActions, NumberInput, SectionCard, Select } from "@/components/plan/fields";
 import { PlanBanners } from "@/components/plan/PlanStatus";
 import { fieldError, usePlan } from "@/contexts/PlanContext";
 import {
-  CADENCE_LABELS,
+  cadenceDetail,
   PAYMENT_KIND_LABELS,
   PROMO_LABELS,
   mediumDate,
@@ -29,7 +30,6 @@ import {
   deleteDebt,
   loadDemoPlan,
   savePlanSettings,
-  saveStartingCash,
   setDebtStatus,
   setCashEventStatus,
   type CashEvent,
@@ -77,20 +77,13 @@ export default function SetupPage() {
 
       <PlanBanners banners={plan.projection.banners} />
 
-      {/* Keyed on the saved values so an external change — loading the sample
-          plan, clearing everything — resets these inputs instead of leaving
-          the old numbers sitting in them. */}
-      <StartingCashSection
-        key={`cash:${plan.initialDeposit?.amount ?? "none"}:${plan.initialDeposit?.startDate ?? ""}`}
-      />
-
       <SettingsSection
-        key={`rules:${plan.settings.cashFloor}:${plan.settings.horizonMonths}:${plan.settings.strategy}`}
+        key={`rules:${plan.settings.cashFloor}:${plan.settings.strategy}`}
       />
 
       <SectionCard
         title="Debts"
-        description="What you owe, at what rate, and when it is due. Set a row to Draft to keep it saved without using it in the plan."
+        description="What you owe, at what rate, and the same start / repeat / due-date schedule as income and bills. Set a row to Draft to keep it saved without using it in the plan."
         action={
           editing.type !== "debt" && (
             <AddButton onClick={() => setEditing({ type: "debt" })}>Add debt</AddButton>
@@ -120,7 +113,7 @@ export default function SetupPage() {
 
       <SectionCard
         title="Money coming in"
-        description="Paychecks and any one-off gains. Draft ones stay on this list but do not add cash to the plan."
+        description="Paychecks and any one-off gains. Start date is when it becomes active; recurring ones also need the day they hit. If you are just starting, add a one-time gain named Initial cash. Draft ones stay on this list but do not add cash to the plan."
         action={
           !(editing.type === "event" && editing.direction === "gain") && (
             <AddButton onClick={() => setEditing({ type: "event", direction: "gain" })}>
@@ -132,7 +125,9 @@ export default function SetupPage() {
         {editing.type === "event" && editing.direction === "gain" && (
           <CashEventForm event={editing.event} direction="gain" onDone={close} />
         )}
-        {gains.length === 0 && <Empty>No income yet. Without it, no extra payoff is possible.</Empty>}
+        {gains.length === 0 && (
+          <Empty>No income yet. Add a one-time Initial cash gain, then paychecks.</Empty>
+        )}
         <EventList
           events={gains}
           plan={plan}
@@ -147,7 +142,7 @@ export default function SetupPage() {
 
       <SectionCard
         title="Money going out"
-        description="Bills and spending. Draft ones stay saved but are ignored by the calendar and payoff plan."
+        description="Bills and spending. Start date is when it becomes active; recurring ones also need the day they hit. Cash charges reduce the ledger; card charges already sit in the debt balances. Draft ones stay saved but are ignored by the calendar and payoff plan."
         action={
           !(editing.type === "event" && editing.direction === "charge") && (
             <AddButton onClick={() => setEditing({ type: "event", direction: "charge" })}>
@@ -204,72 +199,16 @@ export default function SetupPage() {
   );
 }
 
-/** The opening balance. Everything in the projection is measured from here. */
-function StartingCashSection() {
-  const { plan, save, saving, fieldErrors, today } = usePlan();
-  const deposit = plan?.initialDeposit ?? null;
-
-  const [amount, setAmount] = useState(deposit ? String(deposit.amount) : "");
-  const [date, setDate] = useState(deposit?.startDate ?? today);
-
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    await save((planWindow) => saveStartingCash({ amount: amount || 0, date }, planWindow));
-  };
-
-  return (
-    <SectionCard
-      title="Cash on hand"
-      description="The balance you actually have available right now. It is recorded as your opening deposit, and the plan never schedules a payment that would take you below $0."
-    >
-      <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
-        <Field
-          label="Amount"
-          error={fieldError(fieldErrors, "amount")}
-          className="w-40"
-        >
-          <NumberInput
-            value={amount}
-            onChange={(event) => setAmount(event.target.value)}
-            placeholder="0.00"
-            min="0"
-            step="0.01"
-            invalid={!!fieldError(fieldErrors, "amount")}
-          />
-        </Field>
-
-        <Field
-          label="Accurate as of"
-          error={fieldError(fieldErrors, "date")}
-          className="w-44"
-        >
-          <TextInput
-            type="date"
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
-            invalid={!!fieldError(fieldErrors, "date")}
-          />
-        </Field>
-
-        <div className="pb-[0.1rem]">
-          <FormActions saving={saving} submitLabel={deposit ? "Update cash" : "Save cash"} />
-        </div>
-      </form>
-    </SectionCard>
-  );
-}
-
 function SettingsSection() {
   const { plan, save, saving, fieldErrors } = usePlan();
   const settings = plan?.settings;
 
   const [cashFloor, setCashFloor] = useState(String(settings?.cashFloor ?? 100));
-  const [horizonMonths, setHorizonMonths] = useState(String(settings?.horizonMonths ?? 60));
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     await save((planWindow) =>
-      savePlanSettings({ cashFloor: Number(cashFloor), horizonMonths: Number(horizonMonths) }, planWindow),
+      savePlanSettings({ cashFloor: Number(cashFloor) }, planWindow),
     );
   };
 
@@ -278,7 +217,7 @@ function SettingsSection() {
   return (
     <SectionCard
       title="Rules"
-      description="The buffer the plan protects, and how far ahead it looks."
+      description="The cash the plan refuses to spend as extra payoff."
     >
       <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
         <Field
@@ -312,22 +251,6 @@ function SettingsSection() {
             <option value="optimized">Optimized (highest rate)</option>
             <option value="snowball">Snowball (smallest balance)</option>
           </Select>
-        </Field>
-
-        <Field
-          label="Project ahead"
-          hint="Months, up to 60."
-          error={fieldError(fieldErrors, "horizonMonths")}
-          className="w-32"
-        >
-          <NumberInput
-            value={horizonMonths}
-            onChange={(event) => setHorizonMonths(event.target.value)}
-            min="1"
-            max="60"
-            step="1"
-            invalid={!!fieldError(fieldErrors, "horizonMonths")}
-          />
         </Field>
 
         <div className="pb-[0.1rem]">
@@ -398,7 +321,8 @@ function DebtRow({
       <dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4 lg:grid-cols-6">
         <Cell label="Balance" value={money(debt.balance)} />
         <Cell label="APR" value={percent(debt.apr)} />
-        <Cell label="Due" value={`Day ${debt.dueDay}`} />
+        <Cell label="Started" value={debt.startDate ? mediumDate(debt.startDate) : "—"} />
+        <Cell label="Schedule" value={cadenceDetail(debt)} />
         <Cell
           label={debt.paymentKind === "fixed" ? "Payment" : "Est. minimum"}
           value={
@@ -487,8 +411,7 @@ function EventList({
                 </span>
               )}
               <span className="text-[0.625rem] text-ink-faint">
-                {CADENCE_LABELS[event.cadence]} from {mediumDate(event.startDate)}
-                {event.endDate ? ` until ${mediumDate(event.endDate)}` : ""}
+                {cadenceDetail(event)}
               </span>
               {event.direction === "charge" && (
                 <span className="rounded-pill border border-line bg-surface-1 px-1.5 py-px text-[0.625rem] text-ink-muted">

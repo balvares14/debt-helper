@@ -41,7 +41,10 @@ export interface Debt {
   debtType: DebtType;
   balance: number;
   apr: number;
-  dueDay: number;
+  startDate: string;
+  cadence: Cadence;
+  dueDate: string;
+  endDate: string | null;
   paymentKind: PaymentKind;
   fixedPayment: number | null;
   overrideMin: number | null;
@@ -51,6 +54,7 @@ export interface Debt {
   annualFeeMonth: number | null;
   carryingBalance: boolean;
   notes: string | null;
+  balanceAsOf: string;
   status: ItemStatus;
   promos: Promo[];
 }
@@ -62,6 +66,7 @@ export interface CashEvent {
   direction: Direction;
   startDate: string;
   cadence: Cadence;
+  dueDate: string;
   endDate: string | null;
   canPutOnCard: boolean;
   paymentMethod: PaymentMethod;
@@ -87,10 +92,17 @@ export type DayItemKind =
   | "interest"
   | "back_interest";
 
+export type ReviewStatus = "confirmed" | "skipped" | "modified";
+
 export interface DayItem {
   kind: DayItemKind;
   name: string;
   amount: number;
+  /** What the plan wanted before any review. */
+  plannedAmount?: number;
+  itemKey?: string;
+  review?: ReviewStatus | null;
+  reviewable?: boolean;
   method?: "cash" | "card";
   debtId?: number | null;
   debtName?: string | null;
@@ -257,7 +269,10 @@ export interface DebtInput {
   debtType: DebtType;
   balance: number | string;
   apr: number | string;
-  dueDay: number | string;
+  startDate: string;
+  cadence?: Cadence;
+  dueDate: string;
+  endDate?: string | null;
   paymentKind: PaymentKind;
   fixedPayment?: number | string | null;
   overrideMin?: number | string | null;
@@ -267,6 +282,7 @@ export interface DebtInput {
   annualFeeMonth?: number | string | null;
   carryingBalance: boolean;
   notes?: string | null;
+  balanceAsOf?: string;
   status?: ItemStatus;
   promos?: Array<{
     kind: PromoKind;
@@ -282,6 +298,7 @@ export interface CashEventInput {
   direction: Direction;
   startDate: string;
   cadence: Cadence;
+  dueDate: string;
   endDate?: string | null;
   canPutOnCard?: boolean;
   paymentMethod?: PaymentMethod;
@@ -295,10 +312,14 @@ export interface PlanWindow {
   today: string;
   from: string;
   to: string;
+  /** Keep daily detail after payoff + 1 month (calendar paging past it). */
+  continuePastPayoff?: boolean;
 }
 
-const query = (planWindow: PlanWindow): string =>
-  `?today=${planWindow.today}&from=${planWindow.from}&to=${planWindow.to}`;
+const query = (planWindow: PlanWindow): string => {
+  const extra = planWindow.continuePastPayoff ? "&continue=1" : "";
+  return `?today=${planWindow.today}&from=${planWindow.from}&to=${planWindow.to}${extra}`;
+};
 
 export const fetchPlan = (planWindow: PlanWindow): Promise<PlanEnvelope> =>
   api<PlanEnvelope>(`/api/plan${query(planWindow)}`);
@@ -307,11 +328,6 @@ export const savePlanSettings = (
   patch: Partial<PlanSettings>,
   planWindow: PlanWindow,
 ): Promise<PlanEnvelope> => put<PlanEnvelope>(`/api/plan/settings${query(planWindow)}`, patch);
-
-export const saveStartingCash = (
-  input: { amount: number | string; date: string; name?: string },
-  planWindow: PlanWindow,
-): Promise<PlanEnvelope> => put<PlanEnvelope>(`/api/plan/cash${query(planWindow)}`, input);
 
 export const createDebt = (input: DebtInput, planWindow: PlanWindow): Promise<PlanEnvelope> =>
   post<PlanEnvelope>(`/api/debts${query(planWindow)}`, input);
@@ -358,3 +374,28 @@ export const loadDemoPlan = (planWindow: PlanWindow): Promise<PlanEnvelope> =>
 
 export const clearPlan = (planWindow: PlanWindow): Promise<PlanEnvelope> =>
   del<PlanEnvelope>(`/api/plan${query(planWindow)}`);
+
+export interface DayActualInput {
+  date: string;
+  itemKey: string;
+  status: ReviewStatus;
+  amount?: number | string | null;
+  plannedAmount?: number | string | null;
+  debtId?: number | null;
+  method?: "cash" | "card" | null;
+}
+
+export const saveDayActual = (
+  input: DayActualInput,
+  planWindow: PlanWindow,
+): Promise<PlanEnvelope> =>
+  put<PlanEnvelope>(`/api/plan/actuals${query(planWindow)}`, input);
+
+export const clearDayActual = (
+  date: string,
+  itemKey: string,
+  planWindow: PlanWindow,
+): Promise<PlanEnvelope> =>
+  del<PlanEnvelope>(
+    `/api/plan/actuals${query(planWindow)}&date=${encodeURIComponent(date)}&itemKey=${encodeURIComponent(itemKey)}`,
+  );
