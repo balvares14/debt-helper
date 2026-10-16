@@ -90,6 +90,7 @@ function createDebtState(debt) {
     annualFeeCents: toCents(debt.annualFee),
     annualFeeMonth: debt.annualFeeMonth || null,
     carryingBalance: !!debt.carryingBalance,
+    noExtraPayoff: !!debt.noExtraPayoff,
     purchasePromo: purchasePromo
       ? { apr: Number(purchasePromo.apr) || 0, endDate: purchasePromo.endDate }
       : null,

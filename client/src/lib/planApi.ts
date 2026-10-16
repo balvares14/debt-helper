@@ -53,6 +53,7 @@ export interface Debt {
   annualFee: number;
   annualFeeMonth: number | null;
   carryingBalance: boolean;
+  noExtraPayoff: boolean;
   notes: string | null;
   balanceAsOf: string;
   status: ItemStatus;
@@ -281,6 +282,7 @@ export interface DebtInput {
   annualFee?: number | string | null;
   annualFeeMonth?: number | string | null;
   carryingBalance: boolean;
+  noExtraPayoff?: boolean;
   notes?: string | null;
   balanceAsOf?: string;
   status?: ItemStatus;

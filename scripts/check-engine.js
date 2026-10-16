@@ -734,6 +734,30 @@ check(
   plannedHigh[0] ? `$${plannedHigh[0].amount} to ${plannedHigh[0].name}` : 'none'
 );
 
+const holdHigh = engine.project({
+  today: reviewToday,
+  cashFloor: 0,
+  strategy: 'optimized',
+  horizonMonths: 2,
+  windowFrom: reviewToday,
+  windowTo: reviewToday,
+  debts: reviewDebts.map((debt) =>
+    debt.id === 1 ? { ...debt, noExtraPayoff: true } : debt
+  ),
+  events: [reviewPayday]
+});
+const holdHighExtra = extrasOn(holdHigh, reviewToday, 1);
+const holdLowExtra = extrasOn(holdHigh, reviewToday, 2);
+check(
+  'no-extra-payoff keeps extras off that debt',
+  holdHighExtra.length === 0 && holdLowExtra.length > 0,
+  holdHighExtra.length > 0
+    ? `still hit ${holdHighExtra[0].name}`
+    : holdLowExtra[0]
+      ? `extra → ${holdLowExtra[0].name}`
+      : 'no extra at all'
+);
+
 const skippedExtra = engine.project({
   today: reviewToday,
   cashFloor: 0,

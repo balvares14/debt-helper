@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  Check,
   ChevronDown,
   CreditCard,
   Plus,
@@ -433,6 +434,17 @@ function ruleBadgeClass(dirty: boolean, invalid = false, caution = false) {
   return `${base} border-line bg-surface-2`;
 }
 
+function ActiveSince({ date, active }: { date: string; active: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-0.5 text-[0.625rem] text-ink-faint">
+      {active && (
+        <Check className="size-3 shrink-0 text-success-strong" strokeWidth={2.5} aria-hidden />
+      )}
+      active since {mediumDate(date)}
+    </span>
+  );
+}
+
 function DebtRow({
   debt,
   projected,
@@ -496,6 +508,11 @@ function DebtRow({
               Draft
             </span>
           )}
+          {debt.noExtraPayoff && (
+            <span className="rounded-pill border border-line bg-surface-1 px-1.5 py-px text-[0.625rem] font-medium text-ink-muted">
+              No extra
+            </span>
+          )}
           {debt.promos.map((promo) => (
             <span
               key={promo.id}
@@ -518,9 +535,7 @@ function DebtRow({
             {CADENCE_LABELS[debt.cadence] ?? debt.cadence}
           </span>
           {debt.startDate && (
-            <span className="text-[0.625rem] text-ink-faint">
-              from {mediumDate(debt.startDate)}
-            </span>
+            <ActiveSince date={debt.startDate} active={!isDraft} />
           )}
           {debt.endDate && (
             <span className="text-[0.625rem] text-ink-faint">
@@ -623,9 +638,7 @@ function EventList({
                 <span className="rounded-pill border border-line bg-surface-1 px-1.5 py-px text-[0.625rem] font-medium text-ink-muted">
                   {CADENCE_LABELS[event.cadence] ?? event.cadence}
                 </span>
-                <span className="text-[0.625rem] text-ink-faint">
-                  from {mediumDate(event.startDate)}
-                </span>
+                <ActiveSince date={event.startDate} active={!isDraft} />
                 {event.endDate && (
                   <span className="text-[0.625rem] text-ink-faint">
                     until {mediumDate(event.endDate)}

@@ -58,6 +58,7 @@ interface Draft {
   annualFee: string;
   annualFeeMonth: string;
   carryingBalance: boolean;
+  noExtraPayoff: boolean;
   notes: string;
   status: ItemStatus;
   promos: PromoDraft[];
@@ -80,6 +81,7 @@ const emptyDraft = (today: string, debtType: DebtType = "credit_card"): Draft =>
   annualFee: "",
   annualFeeMonth: "1",
   carryingBalance: true,
+  noExtraPayoff: false,
   notes: "",
   status: "draft",
   promos: [],
@@ -102,6 +104,7 @@ const toDraft = (debt: Debt): Draft => ({
   annualFee: debt.annualFee ? String(debt.annualFee) : "",
   annualFeeMonth: debt.annualFeeMonth ? String(debt.annualFeeMonth) : "1",
   carryingBalance: debt.carryingBalance,
+  noExtraPayoff: !!debt.noExtraPayoff,
   notes: debt.notes ?? "",
   status: debt.status ?? "active",
   promos: debt.promos.map((promo) => ({
@@ -192,6 +195,7 @@ export default function DebtForm({
       annualFee: draft.annualFee || 0,
       annualFeeMonth: draft.annualFee ? draft.annualFeeMonth : null,
       carryingBalance: draft.debtType === "loan" ? true : draft.carryingBalance,
+      noExtraPayoff: draft.noExtraPayoff,
       notes: draft.notes || null,
       status,
       // Always sent, so clearing the last promo actually clears it.
@@ -382,22 +386,30 @@ export default function DebtForm({
         )}
       </div>
 
-      {isCard && (
-        <div className="grid gap-2 sm:grid-cols-2">
+      <div className={`grid gap-2 ${isCard ? "sm:grid-cols-2" : ""}`}>
+        {isCard && (
           <Checkbox
             label="This card can take new charges"
             hint="Turn off for a closed or maxed card. Charges pinned here are released."
             checked={draft.acceptsNewCharges}
             onChange={(next) => set("acceptsNewCharges", next)}
           />
+        )}
+        {isCard && (
           <Checkbox
             label="I carry a balance on this card"
             hint="Off means you pay the statement in full, so purchases never accrue interest."
             checked={draft.carryingBalance}
             onChange={(next) => set("carryingBalance", next)}
           />
-        </div>
-      )}
+        )}
+        <Checkbox
+          label="Don't pay extra on this"
+          hint="The plan only pays the required amount each cycle. Leave off so extras can still go here — that's the default."
+          checked={draft.noExtraPayoff}
+          onChange={(next) => set("noExtraPayoff", next)}
+        />
+      </div>
 
       {isCard && (
         <div className="flex min-w-0 flex-col gap-2">

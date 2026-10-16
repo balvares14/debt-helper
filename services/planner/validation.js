@@ -173,6 +173,7 @@ function validateDebt(body) {
       annualFeeMonth,
       // Cards default to carrying a balance; a loan always does.
       carryingBalance: debtType === 'loan' ? true : asBoolean(body.carryingBalance, true),
+      noExtraPayoff: asBoolean(body.noExtraPayoff, false),
       notes: asText(body.notes, 1000),
       status
     },

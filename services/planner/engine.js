@@ -333,7 +333,11 @@ function deferredNeedsSurplus(ctx, state, debtIndex, date) {
 function chooseExtraTarget(ctx, state, date) {
   const live = state.debts
     .map((debt, index) => ({ debt, index }))
-    .filter(({ debt }) => debtState.totalBalanceCents(debt) > 0 && debtState.isActiveOn(debt, date));
+    .filter(({ debt }) =>
+      !debt.noExtraPayoff
+      && debtState.totalBalanceCents(debt) > 0
+      && debtState.isActiveOn(debt, date)
+    );
 
   if (live.length === 0) return null;
 

@@ -19,8 +19,8 @@ function numeric(value) {
 const DEBT_COLUMNS = `
   id, user_id, name, debt_type, balance, apr, start_date, cadence, due_date,
   end_date, payment_kind, fixed_payment, override_min, accepts_new_charges,
-  credit_limit, annual_fee, annual_fee_month, carrying_balance, notes,
-  balance_as_of, status, created_at, updated_at
+  credit_limit, annual_fee, annual_fee_month, carrying_balance, no_extra_payoff,
+  notes, balance_as_of, status, created_at, updated_at
 `;
 
 const EVENT_COLUMNS = `
@@ -54,6 +54,7 @@ function mapDebt(row) {
     annualFee: numeric(row.annual_fee),
     annualFeeMonth: row.annual_fee_month === null ? null : Number(row.annual_fee_month),
     carryingBalance: row.carrying_balance,
+    noExtraPayoff: !!row.no_extra_payoff,
     notes: row.notes,
     balanceAsOf: row.balance_as_of,
     status: asItemStatus(row.status),
@@ -205,9 +206,9 @@ async function createDebt(userId, input) {
     `INSERT INTO debts (
        user_id, name, debt_type, balance, apr, start_date, cadence, due_date,
        end_date, payment_kind, fixed_payment, override_min, accepts_new_charges,
-       credit_limit, annual_fee, annual_fee_month, carrying_balance, notes,
-       balance_as_of, status
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+       credit_limit, annual_fee, annual_fee_month, carrying_balance, no_extra_payoff,
+       notes, balance_as_of, status
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
        RETURNING ${DEBT_COLUMNS}`,
     [
       userId,
@@ -227,6 +228,7 @@ async function createDebt(userId, input) {
       input.annualFee,
       input.annualFeeMonth,
       input.carryingBalance,
+      !!input.noExtraPayoff,
       input.notes,
       input.balanceAsOf || input.startDate,
       asItemStatus(input.status)
@@ -242,7 +244,8 @@ async function updateDebt(userId, debtId, input) {
        cadence = $8, due_date = $9, end_date = $10, payment_kind = $11,
        fixed_payment = $12, override_min = $13, accepts_new_charges = $14,
        credit_limit = $15, annual_fee = $16, annual_fee_month = $17,
-       carrying_balance = $18, notes = $19, balance_as_of = $20, status = $21
+       carrying_balance = $18, no_extra_payoff = $19, notes = $20,
+       balance_as_of = $21, status = $22
      WHERE id = $1 AND user_id = $2
      RETURNING ${DEBT_COLUMNS}`,
     [
@@ -264,6 +267,7 @@ async function updateDebt(userId, debtId, input) {
       input.annualFee,
       input.annualFeeMonth,
       input.carryingBalance,
+      !!input.noExtraPayoff,
       input.notes,
       input.balanceAsOf || input.startDate,
       asItemStatus(input.status)
